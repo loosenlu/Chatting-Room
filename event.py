@@ -259,4 +259,4 @@ class EventBase(object):
             timeout = self.timeout_next()
 
             if timeout is None:
-                self.evsel.ev_dispatch(timeout)
+                self.evsel.ev_dispatch()
