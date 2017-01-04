@@ -11,10 +11,6 @@ EV_READ = 0x01
 EV_WRITE = 0x02
 EV_TIMEOUT = 0x04
 
-class UnknowType(Exception):
-    pass
-
-
 
 class SelectOp(object):
 
@@ -24,25 +20,25 @@ class SelectOp(object):
         self.write_set = []
 
 
-    def ev_add(self, fd, event_type):
+    def ev_add(self, event):
 
-        if event_type == EV_READ:
-            self.read_set.append(fd)
-        elif event_type == EV_WRITE:
-            self.write_set.append(fd)
+        if event.ev_type == EV_READ:
+            self.read_set.append(event.ev_fd)
+        elif event.ev_type == EV_WRITE:
+            self.write_set.append(event.ev_fd)
         else:
-            raise UnknowType()
+            pass
 
 
-    def ev_del(self, fd, event_type):
-        
-        if event_type & EV_READ:
-            self.write_set.remove(fd)
-        elif event_type & EV_WRITE:
-            self.write_set.remove(fd)
+    def ev_del(self, event):
+
+        if event.ev_type == EV_READ:
+            self.write_set.remove(event.ev_fd)
+        elif event.ev_type == EV_WRITE:
+            self.write_set.remove(event.ev_fd)
         else:
             # log
-            raise UnknowType()
+            pass
 
 
     def ev_dispatch(self, timeout):
@@ -151,10 +147,10 @@ class Event(object):
                  ev_callback=None, event_type=None,
                  ev_arg=None, ev_timeout=-1):
 
-        self.fd = fd
-        self.sock = sock
+        self.ev_fd = fd
+        self.ev_sock = sock
         self.ev_callback = ev_callback
-        self.event_type = event_type
+        self.ev_type = event_type
         self.ev_arg = ev_arg
         self.ev_timeout = ev_timeout
 
