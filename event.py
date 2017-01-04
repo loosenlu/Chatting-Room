@@ -46,8 +46,7 @@ class SelectOp(object):
             active_read_ev, active_write_ev, active_exception_ev = \
                 select.select(self.read_ev_set, self.write_ev_set, [], timeout)
         
-        return (active_read_ev, active_write_ev)
-        
+        return (active_read_ev, active_write_ev)       
 
 
 class EpollOp(object):
@@ -89,7 +88,6 @@ class EpollOp(object):
         return (active_read_ev, active_write_ev)
 
 
-
 class KqueueOp(object):
 
     def __init__(self):
@@ -98,32 +96,38 @@ class KqueueOp(object):
         self.events = []
 
 
-    def ev_add(self, fd, event_type):
+    def ev_add(self, event):
+        """Add event to Kqueue backend
+        
+        """
+        if event.io_type == IO_READ:
+            kev = select.kevent(event.ev_fd, select.KQ_FILTER_READ,
+                                select.KQ_EV_ADD)
+            self.events.append(kev)
+        else:
+            kev = select.kevent(event.ev_fd, select.KQ_FILTER_WRITE,
+                                select.KQ_EV_ADD)
+            self.events.append(kev)            
 
-        if event_type == EV_READ:
-            event = select.kevent(fd, select.KQ_FILTER_READ,
-                                  select.KQ_EV_ADD)
-            self.events.append(event)
-        elif event_type == EV_WRITE:
-            event = select.kevent(fd, select.KQ_FILTER_WRITE,
-                                  select.KQ_EV_ADD)
-            self.events.append(event)
-
-
-    def ev_del(self, fd, event_type):
-
-        if event_type == EV_READ:
-            event = select.kevent(fd, select.KQ_FILTER_READ,
-                                  select.KQ_EV_ADD)
-            self.events.remove(event)
-        elif event_type == EV_WRITE:
-            event = select.kevent(fd, select.KQ_FILTER_WRITE,
-                                  select.KQ_EV_ADD)
-            self.events.remove(event)
+    def ev_del(self, event):
+        """Delete event from Kqueue backend
+        
+        """
+        if event.io_type == IO_READ:
+            kev = select.kevent(event.ev_fd, select.KQ_FILTER_READ,
+                                select.KQ_EV_ADD)
+            self.events.remove(kev)
+        else:
+            kev = select.kevent(event.ev_fd, select.KQ_FILTER_WRITE,
+                                select.KQ_EV_ADD)
+            self.events.remove(kev)
 
 
     def ev_dispatch(self, timeout):
-
+        """Kqueue IO multiplexing
+        
+        """
+        timeout = None if timeout == -1 else timeout
         active_events = self.kqueuefd.control(self.events, len(self.events), timeout)
 
         active_list = []
