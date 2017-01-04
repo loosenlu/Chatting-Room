@@ -1,10 +1,5 @@
 
-import sys
-import time
-import socket
-import select
-import logging
-import Queue
+import event
 
 g_select_timeout = 10
 
@@ -13,7 +8,6 @@ class Server(object):
     def __init__(self, host='127.0.0.1', port=6666, client_nums=10):
         self.__host = host
         self.__port = port
-        self.__timeout = timeout
         self.__client_nums = client_nums
         self.__buffer_size = 1024
 
@@ -33,3 +27,6 @@ class Server(object):
         self.outputs = [] #输出文件描述符列表
         self.message_queues = {}#消息队列
         self.client_info = {}
+
+
+if __name__ == "__main__":
