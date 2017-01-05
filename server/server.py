@@ -11,7 +11,11 @@ class Server(object):
         self.reactor = event.EventBase()
         self.online_users = {}
         self.rooms = {}
+        next_21game_time = self._get_next_21game_time()
 
+        listen_event = event.IOEvent(self.listen_sock.fileno(),
+                                     event.IO_READ, call_back, arg) # TODO
+        game_event = event.TimeEvent(call_back, arg, next_21game_time)
 
     def _get_listen_sock(self, ip, port):
 
