@@ -1,44 +1,9 @@
 
 import socket
-<<<<<<< HEAD
-import event
-
-
-
-class UserInfo(object):
-
-    def __init__(self):
-        self.user_id = id
-        self.user_name = name
-
-
-
-
-
-class Server(object):
-
-
-    def __init__(self, ip_address, port):
-
-        self.reactor = event.EventBase()
-        self.listen_sock = self._get_listen_sock(ip_address, port)
-
-
-
-    def _get_listen_sock(self, ip_address, port):
-        """Make a listen socket(ip_address, port).
-
-        """
-        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)
-        server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server_sock.bind(ip_address, int(port))
-        server_sock.listen(10)
-
-    def _check_time(self):
-        pass
-=======
 import time
 import event
+
+
 
 class Server(object):
 
@@ -48,11 +13,10 @@ class Server(object):
         self.reactor = event.EventBase()
         self.online_users = {}
         self.rooms = {}
-        next_21game_time = self._get_next_21game_time()
-
-        listen_event = event.IOEvent(self.listen_sock.fileno(),
-                                     event.IO_READ, call_back, arg) # TODO
-        game_event = event.TimeEvent(call_back, arg, next_21game_time)
+        # the lobby's ID is 0
+        self.room_index = 1
+        game_lobby = RoomInfo(0)
+        self.rooms[0] = game_lobby
 
     def _get_listen_sock(self, ip, port):
 
@@ -61,19 +25,86 @@ class Server(object):
         sock.bind((ip, port))
         sock.listen(10)
 
-    def _get_next_21game_time(self):
+    # def _get_next_21game_time(self):
 
-        half_time = 30 * 60
-        now = time.time()
-        next_21game_time = (int(now) / half_time + 1) * half_time
-        return next_21game_time
+    #     half_time = 30 * 60
+    #     now = time.time()
+    #     next_21game_time = (int(now) / half_time + 1) * half_time
+    #     return next_21game_time
+
+    def create_room(self):
+
+        new_room = RoomInfo(self.room_index)
+        self.rooms[self.room_index] = new_room
+        self.room_index += 1
+
+    def del_room(self, room_id):
+
+        del self.rooms[room_id]
+
+
+    def start(self):
+        pass
 
 
 class RoomInfo(object):
-    pass
+    
+    def __init__(self, room_id):
+
+        self.room_id = room_id
+        self.members = {}
+
+    def broadcast(self):
+
+        pass
+
+    def add_user(self, user):
+
+        self.members[user.user_id] = user
+
+    def del_user(self, user):
+
+        del self.members[user.user_id]
 
 
 class UserInfo(object):
-    pass
+    
+    def __init__(self, user_id, user_name, connect_sock):
 
->>>>>>> bc0779974670b5c0617e97669a9f93a3a2fb64c5
+        self.user_id = user_id
+        self.user_name = user_name
+        self.cur_room = 0
+        self.send_buf = SendBuf(connect_sock)
+        self.recv_buf = RecvBuf(connect_sock)
+
+
+class Buffer(object):
+
+    def __init__(self, sock):
+
+        self.sock = sock
+        self.buffer = []
+
+    def add(self, msg):
+
+        self.buffer.append(msg)
+
+    
+class SendBuf(Buffer):
+
+    def __init__(self, sock):
+
+        Buffer.__init__(sock)
+    
+    def send(self):
+        pass
+
+
+class RecvBuf(Buffer):
+
+    def __init__(self, sock):
+
+        Buffer.__init__(sock)
+
+    def recv(self):
+        pass

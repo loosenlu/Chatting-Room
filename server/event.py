@@ -261,7 +261,7 @@ class EventBase(object):
                 if event.io_type == IO_WRITE:
                     self.active_io_ev.append(event)
 
-    def timeout_next(self):
+    def _timeout_next(self):
 
         if self.time_ev_minheap.empty():
             return -1
@@ -270,7 +270,7 @@ class EventBase(object):
             event = self.time_ev_minheap.top()
             return event.ev_timeval - now
 
-    def prepare_time_event(self):
+    def _prepare_time_event(self):
 
         if self.time_ev_minheap.empty():
             return
@@ -280,7 +280,7 @@ class EventBase(object):
             time_event = self.time_ev_minheap.pop()
             self.active_time_ev.append(time_event)
 
-    def process_active_event(self):
+    def _process_active_event(self):
 
         for time_event in self.active_time_ev:
             time_event.ev_callback(time_event.ev_arg)
@@ -292,8 +292,8 @@ class EventBase(object):
 
         while True:
 
-            timeout = self.timeout_next()
+            timeout = self._timeout_next()
 
             self.event_dispatch(timeout)
-            self.prepare_time_event()
-            self.process_active_event()
+            self._prepare_time_event()
+            self._process_active_event()

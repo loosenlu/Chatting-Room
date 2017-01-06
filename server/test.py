@@ -1,19 +1,29 @@
 
 
-claa B(object):
-
-    def __init__(self, obj):
-        self.obj = obj
-
-
 class A(object):
 
     def __init__(self):
-        self.name = "hello"
+        self.name = "lu"
+
+    def print_haha(self):
+
+        print "Hello" + " A" + "!"
+        self.name = 'li'
     
-    def transfer(self):
-        
+    def shishi(self):
+        return self.print_haha, self
 
 
 a = A()
-b = a.transfer()
+print a.name
+
+print '*' * 16
+b, c = a.shishi()
+type(b)
+type(c)
+print b
+print c
+print '*' * 16
+
+b()
+print a.name
