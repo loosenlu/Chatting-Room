@@ -17,6 +17,11 @@ class Event(object):
 
         self.ev_fd = fd
 
+    def call_back(self):
+        """call_back function, need to override
+
+        """
+        pass
 
 
 class TimeEvent(Event):
@@ -25,12 +30,6 @@ class TimeEvent(Event):
 
         Event.__init__(self, -1)
         self.ev_timeval = timeval
-
-    def call_back(self):
-        """FOR timer event, need to override
-
-        """
-        pass
 
 
 class IOEvent(Event):
@@ -58,6 +57,7 @@ class IOEvent(Event):
             self.read()
         else:
             self.write()
+
 
 class SelectOp(object):
 
