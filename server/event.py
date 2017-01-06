@@ -11,6 +11,54 @@ IO_READ = 0x01
 IO_WRITE = 0x02
 
 
+class Event(object):
+
+    def __init__(self, fd):
+
+        self.ev_fd = fd
+
+
+
+class TimeEvent(Event):
+
+    def __init__(self, timeval):
+
+        Event.__init__(self, -1)
+        self.ev_timeval = timeval
+
+    def call_back(self):
+        """FOR timer event, need to override
+
+        """
+        pass
+
+
+class IOEvent(Event):
+
+    def __init__(self, fd, io_type):
+
+        Event.__init__(self, fd)
+        self.io_type = io_type
+
+    def read(self):
+        """FOR read event, need to override
+
+        """
+        pass
+
+    def write(self):
+        """FOR write event, need to override
+
+        """
+        pass
+
+    def call_back(self):
+
+        if self.io_type == IO_READ:
+            self.read()
+        else:
+            self.write()
+
 class SelectOp(object):
 
     def __init__(self):
@@ -144,31 +192,6 @@ class KqueueOp(object):
         return (active_read_ev, active_write_ev)
 
 
-class Event(object):
-
-    def __init__(self, fd, callback, arg):
-
-        self.ev_fd = fd
-        self.ev_callback = callback
-        self.ev_arg = arg
-
-
-class TimeEvent(Event):
-
-    def __init__(self, call_back, arg, timeval):
-
-        Event.__init__(self, -1, call_back, arg)
-        self.ev_timeval = timeval
-
-
-class IOEvent(Event):
-
-    def __init__(self, fd, io_type, call_back, arg):
-
-        Event.__init__(self, fd, call_back, arg)
-        self.io_type = io_type
-
-
 class MinHeap(object):
 
     def __init__(self, key=lambda x:x):
@@ -261,7 +284,7 @@ class EventBase(object):
                 if event.io_type == IO_WRITE:
                     self.active_io_ev.append(event)
 
-    def timeout_next(self):
+    def _timeout_next(self):
 
         if self.time_ev_minheap.empty():
             return -1
@@ -283,16 +306,16 @@ class EventBase(object):
     def process_active_event(self):
 
         for time_event in self.active_time_ev:
-            time_event.ev_callback(time_event.ev_arg)
+            time_event.call_back()
 
         for io_event in self.active_io_ev:
-            io_event.ev_callback(io_event.ev_arg)
+            io_event.call_back()
 
     def event_loop(self):
 
         while True:
 
-            timeout = self.timeout_next()
+            timeout = self._timeout_next()
 
             self.event_dispatch(timeout)
             self.prepare_time_event()
