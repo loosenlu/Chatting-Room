@@ -7,8 +7,89 @@ import time
 import heapq
 
 
-IO_READ = 0x01
-IO_WRITE = 0x02
+EV_IO_READ = 0x01
+EV_IO_WRITE = 0x02
+
+EV_READABLE = 0x01
+EV_WRITABLE = 0x02
+
+EV_TYPE_ADD = 0x01
+EV_TYPE_DEL = 0x02
+
+
+class EventError(Exception):
+    """Event Error
+    """
+    pass
+
+
+class Event(object):
+
+    def __init__(self, fd):
+
+        self.ev_fd = fd
+
+    def call_back(self):
+        """call_back function, need to override
+
+        """
+        pass
+
+
+class TimeEvent(Event):
+
+    def __init__(self, timeval):
+
+        Event.__init__(self, -1)
+        self.ev_timeval = timeval
+
+
+class IOEvent(Event):
+
+    def __init__(self, fd):
+
+        Event.__init__(self, fd)
+        self.io_type = 0x00
+        self.io_res = 0x00
+
+    def cur_status(self):
+        """Return event status(readable & writable)
+
+        """
+        return self.io_type
+
+    def set_io_type(self, io_type):
+        """Set event io type
+
+        """
+        self.io_type = io_type
+
+    def get_io_type(self):
+
+        return self.io_type
+
+    def get_io_res(self, io_res):
+
+        return self.io_res
+
+    def call_back(self):
+
+        if self.io_type == EV_IO_READ:
+            self.read()
+        else:
+            self.write()
+
+    def read(self):
+        """FOR read event, need to override
+
+        """
+        pass
+
+    def write(self):
+        """FOR write event, need to override
+
+        """
+        pass
 
 
 class SelectOp(object):
@@ -22,19 +103,26 @@ class SelectOp(object):
         """add event to select backend
 
         """
-        if event.io_type == IO_READ:
+        if event.io_type & EV_IO_READ:
             self.read_ev_set.append(event.ev_fd)
-        else:
+
+        if event.io_type & EV_IO_WRITE:
             self.write_ev_set.append(event.ev_fd)
+
 
     def ev_del(self, event):
         """Delete event from select backend
 
         """
-        if event.io_type == IO_READ:
-            self.read_ev_set.remove(event)
-        else:
-            self.write_ev_set.remove(event)
+        if event.io_type & EV_IO_READ:
+            self.read_ev_set.remove(event.fd)
+
+        if event.io_type & EV_IO_WRITE:
+            self.write_ev_set.remove(event.fd)
+
+    def ev_set(self, event):
+
+        pass
 
     def ev_dispatch(self, timeout):
         """Select IO multiplexing
@@ -61,9 +149,10 @@ class EpollOp(object):
         """Add event to epoll backend
 
         """
-        if event.io_type == IO_READ:
+        if event.io_type & EV_IO_READ:
             self.epollfd.register(event.ev_fd, select.EPOOLIN)
-        else:
+
+        if event.io_type & EV_IO_WRITE:
             self.epollfd.register(event.ev_fd, select.EPOOLOUT)
 
     def ev_del(self, event):
@@ -71,6 +160,10 @@ class EpollOp(object):
 
         """
         self.epollfd.unregister(event.ev_fd)
+
+    def ev_set(self, ev_fd, io_type, flag):
+
+        pass
 
     def ev_dispatch(self, timeout):
         """Epoll IO multiplexing
@@ -106,7 +199,7 @@ class KqueueOp(object):
         """Add event to Kqueue backend
 
         """
-        if event.io_type == IO_READ:
+        if event.io_type == EV_IO_READ:
             self._update_registration(event.ev_fd, select.KQ_FILTER_READ,
                                       select.KQ_EV_ADD)
         else:
@@ -118,13 +211,17 @@ class KqueueOp(object):
         """Delete event from Kqueue backend
 
         """
-        if event.io_type == IO_READ:
+        if event.io_type == EV_IO_READ:
             self._update_registration(event.ev_fd, select.KQ_FILTER_READ,
                                       select.KQ_EV_DELETE)
         else:
             self._update_registration(event.ev_fd, select.KQ_FILTER_WRITE,
                                       select.KQ_EV_DELETE)
         self.fd_num -= 1
+
+    def ev_set(self, event):
+
+        pass
 
 
     def ev_dispatch(self, timeout):
@@ -142,31 +239,6 @@ class KqueueOp(object):
             elif event.filter == select.KQ_FILTER_WRITE:
                 active_write_ev.append(event.ident)
         return (active_read_ev, active_write_ev)
-
-
-class Event(object):
-
-    def __init__(self, fd, callback, arg):
-
-        self.ev_fd = fd
-        self.ev_callback = callback
-        self.ev_arg = arg
-
-
-class TimeEvent(Event):
-
-    def __init__(self, call_back, arg, timeval):
-
-        Event.__init__(self, -1, call_back, arg)
-        self.ev_timeval = timeval
-
-
-class IOEvent(Event):
-
-    def __init__(self, fd, io_type, call_back, arg):
-
-        Event.__init__(self, fd, call_back, arg)
-        self.io_type = io_type
 
 
 class MinHeap(object):
@@ -208,7 +280,9 @@ class EventBase(object):
         self.active_time_ev = []
 
     def check_backend(self):
+        """Check Environment, select IO multiplexing backend.
 
+        """
         if platform.system() == 'Linux':
             # FOR Linux
             backend = EpollOp()
@@ -220,29 +294,33 @@ class EventBase(object):
             backend = SelectOp()
         return backend
 
-    def event_add(self, event):
+    def has_event(self, ev_fd):
+
+        return ev_fd in self.io_ev_map
+
+    def set_event(self, ev_fd, io_type):
+        """Set event io type and register to IO multiplexing reactor
+
+        """
+        self.io_ev_map[ev_fd].set_io_type(io_type)
+        self.evsel.ev_set(event)
+
+
+    def add_event(self, event):
 
         if isinstance(event, TimeEvent):
             # FOR time event
             self.time_ev_minheap.push(event)
-        elif isinstance(event, IOEvent):
-            if event.ev_fd in self.io_ev_map:
-                self.io_ev_map[event.ev_fd].append(event)
-            else:
-                register_events = [event]
-                self.io_ev_map[event.ev_fd] = register_events
-            self.evsel.ev_add(event)
+        else:
+            self.io_ev_map[event.ev_fd] = event
+        self.evsel.ev_add(event)
 
-    def event_del(self, event):
+    def del_event(self, event):
 
         if isinstance(event, TimeEvent):
             pass
-        elif isinstance(event, IOEvent):
-            if event.ev_fd not in self.io_ev_map:
-                return
-            else:
-                self.io_ev_map[event.ev_fd].remove(event)
-            self.evsel.ev_del(event)
+        else:
+            del self.io_ev_map[event.ev_fd]
 
     def event_dispatch(self, timeout):
         """
@@ -283,10 +361,10 @@ class EventBase(object):
     def _process_active_event(self):
 
         for time_event in self.active_time_ev:
-            time_event.ev_callback(time_event.ev_arg)
+            time_event.call_back()
 
         for io_event in self.active_io_ev:
-            io_event.ev_callback(io_event.ev_arg)
+            io_event.call_back()
 
     def event_loop(self):
 
