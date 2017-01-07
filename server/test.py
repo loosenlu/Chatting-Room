@@ -1,29 +1,17 @@
 
-
 class A(object):
 
     def __init__(self):
-        self.name = "lu"
 
-    def print_haha(self):
-
-        print "Hello" + " A" + "!"
-        self.name = 'li'
-    
-    def shishi(self):
-        return self.print_haha, self
-
+        self.name = "hehe"
 
 a = A()
-print a.name
+b = A()
 
-print '*' * 16
-b, c = a.shishi()
-type(b)
-type(c)
-print b
-print c
-print '*' * 16
-
-b()
-print a.name
+m = {1:a, 2:b}
+hehe = m[1]
+hehe.name = "haha"
+print m[1].name
+m[1].name = "luli"
+print '*' * 32
+print hehe.name

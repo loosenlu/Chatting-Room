@@ -52,8 +52,8 @@ class IOEvent(Event):
         self.io_type = 0x00
         self.io_res = 0x00
 
-    def cur_status(self):
-        """Return event status(readable & writable)
+    def get_io_type(self):
+        """Get event io type
 
         """
         return self.io_type
@@ -64,20 +64,27 @@ class IOEvent(Event):
         """
         self.io_type = io_type
 
-    def get_io_type(self):
-
-        return self.io_type
-
-    def get_io_res(self, io_res):
+    def get_io_res(self):
 
         return self.io_res
 
+    def set_io_res(self, io_res):
+
+        self.io_res |= (io_res)
+
+    def clear_io_res(self, io_res):
+
+        self.io_res &= ~(io_res)
+
     def call_back(self):
 
-        if self.io_type == EV_IO_READ:
+        if self.get_io_res() & EV_READABLE:
             self.read()
-        else:
+            self.clear_io_res(EV_READABLE)
+
+        if self.get_io_res() & EV_WRITABLE:
             self.write()
+            self.clear_io_res(EV_WRITABLE)
 
     def read(self):
         """FOR read event, need to override
@@ -120,9 +127,12 @@ class SelectOp(object):
         if event.io_type & EV_IO_WRITE:
             self.write_ev_set.remove(event.fd)
 
-    def ev_set(self, event):
+    def ev_set(self, old_event, new_event):
+        """Set new io type for event
 
-        pass
+        """
+        self.ev_del(old_event)
+        self.ev_add(new_event)
 
     def ev_dispatch(self, timeout):
         """Select IO multiplexing
@@ -161,9 +171,12 @@ class EpollOp(object):
         """
         self.epollfd.unregister(event.ev_fd)
 
-    def ev_set(self, ev_fd, io_type, flag):
+    def ev_set(self, old_event, new_event):
+        """Set new io type for event
 
-        pass
+        """
+        self.ev_del(old_event)
+        self.ev_add(new_event)
 
     def ev_dispatch(self, timeout):
         """Epoll IO multiplexing
@@ -199,10 +212,10 @@ class KqueueOp(object):
         """Add event to Kqueue backend
 
         """
-        if event.io_type == EV_IO_READ:
+        if event.io_type & EV_IO_READ:
             self._update_registration(event.ev_fd, select.KQ_FILTER_READ,
                                       select.KQ_EV_ADD)
-        else:
+        if event.io_type & EV_IO_WRITE:
             self._update_registration(event.ev_fd, select.KQ_FILTER_WRITE,
                                       select.KQ_EV_ADD)
         self.fd_num += 1
@@ -211,18 +224,18 @@ class KqueueOp(object):
         """Delete event from Kqueue backend
 
         """
-        if event.io_type == EV_IO_READ:
+        if event.io_type & EV_IO_READ:
             self._update_registration(event.ev_fd, select.KQ_FILTER_READ,
                                       select.KQ_EV_DELETE)
-        else:
+        if event.io_type & EV_IO_WRITE:
             self._update_registration(event.ev_fd, select.KQ_FILTER_WRITE,
                                       select.KQ_EV_DELETE)
         self.fd_num -= 1
 
-    def ev_set(self, event):
+    def ev_set(self, old_event, new_event):
 
-        pass
-
+        self.ev_del(old_event)
+        self.ev_add(new_event)
 
     def ev_dispatch(self, timeout):
         """Kqueue IO multiplexing
@@ -272,14 +285,14 @@ class EventBase(object):
 
     def __init__(self):
 
-        self.evsel = self.check_backend()
+        self.evsel = self._check_backend()
         self.io_ev_map = {}
         self.time_ev_minheap = MinHeap(lambda time_event:
                                        time_event.ev_timeval)
-        self.active_io_ev = []
+        self.active_io_ev = {}
         self.active_time_ev = []
 
-    def check_backend(self):
+    def _check_backend(self):
         """Check Environment, select IO multiplexing backend.
 
         """
@@ -302,12 +315,14 @@ class EventBase(object):
         """Set event io type and register to IO multiplexing reactor
 
         """
+        old_event = self.io_ev_map[ev_fd]
         self.io_ev_map[ev_fd].set_io_type(io_type)
-        self.evsel.ev_set(event)
-
+        self.evsel.ev_set(old_event, self.io_ev_map[ev_fd])
 
     def add_event(self, event):
+        """
 
+        """
         if isinstance(event, TimeEvent):
             # FOR time event
             self.time_ev_minheap.push(event)
@@ -316,13 +331,16 @@ class EventBase(object):
         self.evsel.ev_add(event)
 
     def del_event(self, event):
+        """
 
+        """
         if isinstance(event, TimeEvent):
             pass
         else:
             del self.io_ev_map[event.ev_fd]
+        self.evsel.ev_del(event)
 
-    def event_dispatch(self, timeout):
+    def _dispatch_event(self, timeout):
         """
 
         """
@@ -330,14 +348,16 @@ class EventBase(object):
                 self.evsel.ev_dispatch(timeout)
 
         for fd in active_read_ev:
-            for event in self.io_ev_map[fd]:
-                if event.io_type == IO_READ:
-                    self.active_io_ev.append(event)
+
+            self.io_ev_map[fd].set_io_res(EV_READABLE)
+            if fd not in self.active_io_ev:
+                self.active_io_ev[fd] = self.io_ev_map[fd]
 
         for fd in active_write_ev:
-            for event in self.io_ev_map[fd]:
-                if event.io_type == IO_WRITE:
-                    self.active_io_ev.append(event)
+
+            self.io_ev_map[fd].set_io_res(EV_WRITABLE)
+            if fd not in self.active_io_ev:
+                self.active_io_ev[fd] = self.io_ev_map[fd]
 
     def _timeout_next(self):
 
@@ -363,8 +383,8 @@ class EventBase(object):
         for time_event in self.active_time_ev:
             time_event.call_back()
 
-        for io_event in self.active_io_ev:
-            io_event.call_back()
+        for _, event in self.active_io_ev.iteritems():
+            event.call_back()
 
     def event_loop(self):
 
@@ -372,6 +392,6 @@ class EventBase(object):
 
             timeout = self._timeout_next()
 
-            self.event_dispatch(timeout)
+            self._dispatch_event(timeout)
             self._prepare_time_event()
             self._process_active_event()

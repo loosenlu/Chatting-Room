@@ -10,7 +10,8 @@ class Server(event.IOEvent):
 
         self.event_base = base
         self._get_listen_sock(ip, port)
-        event.IOEvent.__init__(self, self.listen_sock.fileno(), event.IO_READ)
+        event.IOEvent.__init__(self, self.listen_sock.fileno())
+        self.set_io_type(event.EV_IO_READ)
         self.no_authorization = {}
         self.online_users = {}
         self.rooms = {}
@@ -33,17 +34,23 @@ class Server(event.IOEvent):
 
         conn, _ = self.listen_sock.accept()
         conn.setblocking(0)
-        new_session = Session(conn, self.event_base, event.IO_READ)
+        new_session = Session(conn, self, event.EV_IO_READ)
         self.no_authorization[conn.fileno()] = new_session
         self.event_base.event_add(new_session)
 
 
 class Session(event.IOEvent):
 
-    def __init__(self, sock, base, io_type):
+    def __init__(self, sock, server, io_type):
 
         self.sock = sock
-        self.event_base = base
+        self.server = server
         self.user_id = -1
         event.IOEvent.__init__(self.sock.fileno(), io_type)
         self.authorization = False
+
+    def read(self):
+        pass
+
+    def write(self):
+        pass
