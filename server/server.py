@@ -9,11 +9,16 @@ MSG_TYPE_REG = 'RE'
 MSG_TYPE_LOGIN = 'LO'
 
 MSG_TYPE_CRT_ROOM = 'CR'
-MSG_TYPE_JOIN_ROOM = 'JR'
+MSG_TYPE_JOIN_ROOM = 'JO'
 MSG_TYPE_LEAVE_ROOM = 'LR'
 
-MSG_TYPE_UNITCAST= 'UN'
+MSG_TYPE_GET_ROOMS = 'GR'
+MSG_TYPE_GET_USER = 'GU'
+
+MSG_TYPE_UNITCAST = 'UN'
 MSG_TYPE_BROADCAST = 'BR'
+
+SEPARATOR = chr(0)
 
 
 class Server(event.IOEvent):
@@ -26,7 +31,10 @@ class Server(event.IOEvent):
         self.set_io_type(event.EV_IO_READ)
         self.no_authorization = {}
         self.online_users = {}
+
         self.rooms = {}
+        self.rooms[0] = Room("Game Hall")
+
         self.event_base.add_event(self)
 
     def _get_listen_sock(self, ip_address, port):
@@ -35,6 +43,16 @@ class Server(event.IOEvent):
         self.listen_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.listen_sock.bind((ip_address, port))
         self.listen_sock.listen(10)
+
+    def crt_room(self, room_name):
+
+        new_room = Room(room_name)
+        self.rooms[room_name] = new_room
+        return new_room
+
+    def del_room(self, room_name):
+
+        del self.rooms[room_name]
 
     def _get_next_21game_time(self):
 
@@ -52,6 +70,26 @@ class Server(event.IOEvent):
         self.event_base.event_add(new_session)
 
 
+class Room(object):
+
+    def __init__(self, room_name):
+
+        self.room_name = room_name
+        self.sessions = {}
+
+    def leave(self, session):
+
+        del self.sessions[session.user_name]
+
+    def enter(self, session):
+
+        self.sessions[session.user_name] = session
+
+    def empty(self):
+
+        return len(self.sessions) == 0
+
+
 class InChannel(object):
 
     def __init__(self, sock):
@@ -67,12 +105,14 @@ class InChannel(object):
 
     def _resolve_header(self, packet):
 
-        #  0           1           2           3           4           N
+        #  0           2           4           6           8           N
         #  +-----+-----+-----+-----+-----+-----+-----+-----+-----------+
-        #  |           |                       |           |           |
-        #  |   HEADER  |         LENGTH        |    TYPE   |    MSG    |
-        #  |   (0xFF)  |                       |           |           |
+        #  |           |           |           |                       |
+        #  |    'NE'   |   LENGTH  |    TYPE   |        MSSAGE         |
+        #  |           |           |           |                       |
         #  +-----+-----+-----+-----+-----+-----+-----+-----+-----------+
+
+        # 'NE' is the identifier of MSG
 
         if len(packet) < 4:
             self.msg_container.append(packet)
@@ -158,7 +198,9 @@ class Session(event.IOEvent):
 
         self.sock = sock
         self.server = server
-        self.user_id = -1
+        self.user_name = None
+        self.cur_room = None
+
         event.IOEvent.__init__(self.sock.fileno(), io_type)
         self.authorization = False
         self.read_channel = InChannel(self.sock)
@@ -176,34 +218,142 @@ class Session(event.IOEvent):
         # no msg to send
         if self.write_channel.empty():
             self.set_io_type(event.EV_IO_READ)
-    
-    def register(self):
-        pass
-
-    def login(self):
-        pass
-    
-    def send(self, msg_type):
-        pass
-
-    def create_room(self):
-        pass
-
-    def join_room(self):
-        pass
-
-    def leave_room(self):
-        pass
 
     def _resolve_msg(self, msg):
 
-        msg_type = msg[0:1]
-        if msg_type == MSG_TYPE_REG:
-            self.register()
-        elif msg_type == MSG_TYPE_LOGIN:
-            self.login()
-        elif msg_type == MSG_TYPE_CRT_ROOM:
-            self.create_room()
-        elif msg_type == MSG_TYPE_CRT_ROOM:
-            self.create_room()
-        elif msg_type ==
+        # msg_type = msg[0:2]
+        # if msg_type == MSG_TYPE_REG:
+        #     pass
+
+        # elif msg_type == MSG_TYPE_LOGIN:
+        #     pass
+
+        # elif msg_type == MSG_TYPE_CRT_ROOM:
+
+
+        # elif msg_type == MSG_TYPE_JOIN_ROOM:
+        #     new_room_name = msg[2:]
+        #     old_room = self.server.get_room(self.cur_room)
+        #     old_room.leave(self)
+        #     new_room = self.server.get_room(new_room_name)
+        #     new_room.enter(self)
+        #     self.cur_room = new_room_name
+        #     if old_room.empty():
+        #         self.server.del_room(old_room.room_name)
+
+        # elif msg_type == MSG_TYPE_LEAVE_ROOM:
+        #     old_room = self.server.get_room(self.cur_room)
+        #     old_room.leave(self)
+        #     game_hall = self.server.get_room("Game Hall")
+        #     game_hall.enter(self)
+        #     self.cur_room = "Game Hall"
+        #     if old_room.empty():
+        #         self.server.del_room(old_room.room_name)
+
+        # elif msg_type == MSG_TYPE_UNITCAST:
+        #     pass
+        # elif msg_type == MSG_TYPE_BROADCAST:
+        #     pass
+        pass
+    
+    def _check(self, user_name, user_passwd):
+        pass
+
+    def _new_user(self, user_name, user_passwd):
+        pass
+
+    def _register(self, msg):
+
+        user_name, user_passwd = msg.split(SEPARATOR)
+        self._new_user(user_name, user_passwd)
+        self.user_name = user_name
+        self.cur_room = "Game Hall"
+        self.server.rooms[self.cur_room].enter(self)
+        self.authorization = True
+        packet = self._build_packet("Registration Success!")
+        self.write_channel.add_msg(packet)
+
+    def _login(self, msg):
+
+        user_name, user_passwd = msg.split(SEPARATOR)
+        self._check(user_name, user_passwd)
+        self.user_name = user_name
+        self.cur_room = "Game Hall"
+        self.server.rooms[self.cur_room].enter(self)
+        self.authorization = True
+        packet = self._build_packet("Login Success!")
+        self.write_channel.add_msg(packet)
+
+    def _crt_room(self, new_room_name):
+
+        new_room = self.server.crt_room(new_room_name)
+        old_room = self.server.rooms[self.cur_room]
+        old_room.leave(self)
+        new_room.enter(self)
+        self.cur_room = new_room_name
+        if old_room.empty():
+            self.server.del_room(old_room.room_name)
+
+    def _join_room(self, join_room_name):
+
+        join_room = self.server.rooms[join_room_name]
+        old_room = self.server.rooms[self.cur_room]
+        old_room.leave(self)
+        join_room.enter(self)
+        self.cur_room = join_room_name
+        if old_room.empty():
+            self.server.del_room(old_room.room_name)
+
+    def _unitcast(self, packet):
+
+        user_name, msg = packet.split(SEPARATOR)
+        new_packet = self._build_packet(msg)
+        current_room = self.server.rooms[self.cur_room]
+        user_session = current_room.users[user_name]
+        user_session.add_msg(new_packet)
+
+    def _broadcast(self, packet):
+
+        msg = packet
+        new_packet = self._build_packet(msg)
+        current_room = self.server.rooms[self.cur_room]
+        for _, user_session in current_room.sessions.iteritems():
+            user_session.add_msg(new_packet)
+
+    def _leave_room(self):
+
+        old_room = self.server.rooms[self.cur_room]
+        game_hall = self.server.rooms["Game Hall"]
+        old_room.leave(self)
+        game_hall.enter(self)
+        self.cur_room = "Game Hall"
+        if old_room.empty():
+            self.server.del_rooms(old_room.room_name)
+
+    def _get_room_list(self):
+
+        rooms_list = []
+        for room_name in self.server.rooms.keys():
+            rooms_list.append(room_name)
+        return SEPARATOR.join(rooms_list)
+
+    def _get_user_list(self):
+
+        users_list = []
+        cur_room = self.server.rooms[self.cur_room]
+        for user_name in cur_room.sessions.keys():
+            users_list.append(user_name)
+        return SEPARATOR.join(users_list)
+
+    def _pack_number(self, num):
+        pass
+
+    def _build_packet(self, msg):
+        """Build packet send to user
+
+        """
+        data = []
+        msg_len = len(msg)
+        data.append(self._pack_number(msg_len))
+        data.append(msg)
+        return ''.join(data)
