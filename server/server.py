@@ -16,6 +16,7 @@ class Server(event.IOEvent):
         self.no_authorization = {}
         self.online_users = {}
         self.rooms = {}
+        self.event_base.add_event(self)
 
     def _get_listen_sock(self, ip_address, port):
 
@@ -161,6 +162,7 @@ class Session(event.IOEvent):
     def write(self):
 
         self.write_channel.write()
+        # no msg to send
         if self.write_channel.empty():
             self.set_io_type(event.EV_IO_READ)
 
