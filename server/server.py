@@ -3,7 +3,7 @@ import time
 import event
 
 
-MSG_HEADER = 'NE'
+PACKET_HEADER = 'NE'
 
 MSG_TYPE_REG = 'RE'
 MSG_TYPE_LOGIN = 'LO'
@@ -17,6 +17,8 @@ MSG_TYPE_GET_USER = 'GU'
 
 MSG_TYPE_UNITCAST = 'UN'
 MSG_TYPE_BROADCAST = 'BR'
+
+MSG_TYPE_GAME = 'GA'
 
 SEPARATOR = chr(0)
 
@@ -172,24 +174,24 @@ class OutChannel(object):
     def __init__(self, sock):
 
         self.sock = sock
-        self.msg_container = []
+        self.packet_container = []
         self.has_send = 0
 
     def write(self):
 
-        msg = self.msg_container[0]
-        self.has_send += self.sock.send(msg[self.has_send:])
-        if self.has_send == len(msg):
+        packet = self.packet_container[0]
+        self.has_send += self.sock.send(packet[self.has_send:])
+        if self.has_send == len(packet):
             self.has_send = 0
-            del self.msg_container[0]
+            del self.packet_container[0]
 
     def empty(self):
 
-        return len(self.msg_container) == 0
+        return len(self.packet_container) == 0
 
-    def add_msg(self, msg):
+    def add_packet(self, packet):
 
-        self.msg_container.append(msg)
+        self.packet_container.append(packet)
 
 
 class Session(event.IOEvent):
@@ -221,41 +223,8 @@ class Session(event.IOEvent):
 
     def _resolve_msg(self, msg):
 
-        # msg_type = msg[0:2]
-        # if msg_type == MSG_TYPE_REG:
-        #     pass
-
-        # elif msg_type == MSG_TYPE_LOGIN:
-        #     pass
-
-        # elif msg_type == MSG_TYPE_CRT_ROOM:
-
-
-        # elif msg_type == MSG_TYPE_JOIN_ROOM:
-        #     new_room_name = msg[2:]
-        #     old_room = self.server.get_room(self.cur_room)
-        #     old_room.leave(self)
-        #     new_room = self.server.get_room(new_room_name)
-        #     new_room.enter(self)
-        #     self.cur_room = new_room_name
-        #     if old_room.empty():
-        #         self.server.del_room(old_room.room_name)
-
-        # elif msg_type == MSG_TYPE_LEAVE_ROOM:
-        #     old_room = self.server.get_room(self.cur_room)
-        #     old_room.leave(self)
-        #     game_hall = self.server.get_room("Game Hall")
-        #     game_hall.enter(self)
-        #     self.cur_room = "Game Hall"
-        #     if old_room.empty():
-        #         self.server.del_room(old_room.room_name)
-
-        # elif msg_type == MSG_TYPE_UNITCAST:
-        #     pass
-        # elif msg_type == MSG_TYPE_BROADCAST:
-        #     pass
         pass
-    
+
     def _check(self, user_name, user_passwd):
         pass
 
@@ -271,7 +240,7 @@ class Session(event.IOEvent):
         self.server.rooms[self.cur_room].enter(self)
         self.authorization = True
         packet = self._build_packet("Registration Success!")
-        self.write_channel.add_msg(packet)
+        self.write_channel.add_packet(packet)
 
     def _login(self, msg):
 
@@ -282,7 +251,7 @@ class Session(event.IOEvent):
         self.server.rooms[self.cur_room].enter(self)
         self.authorization = True
         packet = self._build_packet("Login Success!")
-        self.write_channel.add_msg(packet)
+        self.write_channel.add_packet(packet)
 
     def _crt_room(self, new_room_name):
 
@@ -310,7 +279,7 @@ class Session(event.IOEvent):
         new_packet = self._build_packet(msg)
         current_room = self.server.rooms[self.cur_room]
         user_session = current_room.users[user_name]
-        user_session.add_msg(new_packet)
+        user_session.write_channel.add_packet(new_packet)
 
     def _broadcast(self, packet):
 
@@ -318,7 +287,7 @@ class Session(event.IOEvent):
         new_packet = self._build_packet(msg)
         current_room = self.server.rooms[self.cur_room]
         for _, user_session in current_room.sessions.iteritems():
-            user_session.add_msg(new_packet)
+            user_session.add_packet(new_packet)
 
     def _leave_room(self):
 
@@ -335,7 +304,10 @@ class Session(event.IOEvent):
         rooms_list = []
         for room_name in self.server.rooms.keys():
             rooms_list.append(room_name)
-        return SEPARATOR.join(rooms_list)
+
+        msg = SEPARATOR.join(rooms_list)
+        new_packet = self._build_packet(msg)
+        self.write_channel.add_packet(new_packet)
 
     def _get_user_list(self):
 
@@ -343,7 +315,15 @@ class Session(event.IOEvent):
         cur_room = self.server.rooms[self.cur_room]
         for user_name in cur_room.sessions.keys():
             users_list.append(user_name)
-        return SEPARATOR.join(users_list)
+
+        msg = SEPARATOR.join(users_list)
+        new_packet = self._build_packet(msg)
+        self.write_channel.add_packet(new_packet)
+
+    def _game_anwser(self, packet):
+
+        msg = packet
+        pass
 
     def _pack_number(self, num):
         pass
@@ -354,6 +334,7 @@ class Session(event.IOEvent):
         """
         data = []
         msg_len = len(msg)
+        data.append()
         data.append(self._pack_number(msg_len))
         data.append(msg)
         return ''.join(data)
