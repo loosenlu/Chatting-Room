@@ -5,6 +5,17 @@ import event
 
 MSG_HEADER = 'NE'
 
+MSG_TYPE_REG = 'RE'
+MSG_TYPE_LOGIN = 'LO'
+
+MSG_TYPE_CRT_ROOM = 'CR'
+MSG_TYPE_JOIN_ROOM = 'JR'
+MSG_TYPE_LEAVE_ROOM = 'LR'
+
+MSG_TYPE_UNITCAST= 'UN'
+MSG_TYPE_BROADCAST = 'BR'
+
+
 class Server(event.IOEvent):
 
     def __init__(self, ip, port, base):
@@ -157,7 +168,7 @@ class Session(event.IOEvent):
 
         msg = self.read_channel.read()
         if msg is not None:
-            self.process_msg_in(msg)
+            self._resolve_msg(msg)
 
     def write(self):
 
@@ -165,7 +176,34 @@ class Session(event.IOEvent):
         # no msg to send
         if self.write_channel.empty():
             self.set_io_type(event.EV_IO_READ)
-
-    def process_msg_in(self, msg):
-
+    
+    def register(self):
         pass
+
+    def login(self):
+        pass
+    
+    def send(self, msg_type):
+        pass
+
+    def create_room(self):
+        pass
+
+    def join_room(self):
+        pass
+
+    def leave_room(self):
+        pass
+
+    def _resolve_msg(self, msg):
+
+        msg_type = msg[0:1]
+        if msg_type == MSG_TYPE_REG:
+            self.register()
+        elif msg_type == MSG_TYPE_LOGIN:
+            self.login()
+        elif msg_type == MSG_TYPE_CRT_ROOM:
+            self.create_room()
+        elif msg_type == MSG_TYPE_CRT_ROOM:
+            self.create_room()
+        elif msg_type ==
