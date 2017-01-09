@@ -218,15 +218,48 @@ class Session(event.IOEvent):
 
     def _resolve_msg(self, msg):
 
-        pass
+        msg_type = msg[0:2]
+        msg_data = msg[2:]
+        if msg_type == MSG_TYPE_REG:
+            self._register(self, msg_data)
+        elif msg_type == MSG_TYPE_LOGIN:
+            self._login(msg_data)
+        elif msg_type == MSG_TYPE_GET_ROOMS:
+            self._get_room_list()
+        elif msg_type == MSG_TYPE_GET_USER:
+            self._get_user_list()
+        elif msg_type == MSG_TYPE_CRT_ROOM:
+            self._login(msg_data)
+        elif msg_type == MSG_TYPE_JOIN_ROOM:
+            self._join_room(msg_data)
+        elif msg_type == MSG_TYPE_LEAVE_ROOM:
+            self._leave_room()
+        elif msg_type == MSG_TYPE_UNITCAST:
+            self._unitcast(msg_data)
+        elif msg_type == MSG_TYPE_BROADCAST:
+            self._broadcast(msg)
+        elif msg_type == MSG_TYPE_GAME:
+            self._game_anwser()
+        else:
+            pass
 
     def _check(self, user_name, user_passwd):
 
-        pass
+        self.server.database.seek(0, os.SEEK_SET)
+        for user_info in self.server.database:
+            name, passwd, online_time_str = user_info.split(SEPARATOR)
+            if name == user_name and passwd == user_passwd:
+                packet = self._build_packet("Welcome to Game Hall!")
+                self.write_channel.add_packet(packet)
+                return
+        packet = self._build_packet("The user is illegal, please try again!")
+        self.write_channel.add_packet(packet)
 
     def _new_user(self, user_name, user_passwd):
 
-        pass
+        self.server.database.seek(0, os.SEEK_END)
+        user_info = SEPARATOR.join([user_name, user_passwd, str(0)])
+        self.server.database.write(user_info)
 
     def _register(self, msg):
 
