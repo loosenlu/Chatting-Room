@@ -1,6 +1,10 @@
+
+import struct
 import socket
 import time
 import event
+import os
+import platform
 
 
 PACKET_HEADER = 'NE'
@@ -33,11 +37,20 @@ class Server(event.IOEvent):
         self.set_io_type(event.EV_IO_READ)
         self.no_authorization = {}
         self.online_users = {}
-
         self.rooms = {}
         self.rooms[0] = Room("Game Hall")
-
+        self.database = self._crt_database()
         self.event_base.add_event(self)
+
+    def _crt_database(self):
+
+        path = os.getcwd()
+        if platform.system() == 'Windows':
+            database_name = ''.join([path, r'\\', "server_data"])
+        else:
+            database_name = ''.join([path, '/', "server_data"])
+        database_fd = open(database_name, 'r+')
+        return database_fd
 
     def _get_listen_sock(self, ip_address, port):
 
@@ -98,72 +111,54 @@ class InChannel(object):
 
         self.sock = sock
         self.ready = False
-        self.msg_container = []
+        self.data_container = []
         self.need_to_read = -1
 
-    def _parse_length(self, len):
+    def _unpack_len(self, len_filed):
 
-        pass
+        msg_len, _ = struct.unpack('h', len_filed)
+        return msg_len
 
-    def _resolve_header(self, packet):
+    def _get_packet_info(self, data):
 
-        #  0           2           4           6           8           N
-        #  +-----+-----+-----+-----+-----+-----+-----+-----+-----------+
-        #  |           |           |           |                       |
-        #  |    'NE'   |   LENGTH  |    TYPE   |        MSSAGE         |
-        #  |           |           |           |                       |
-        #  +-----+-----+-----+-----+-----+-----+-----+-----+-----------+
+        data = ''.join(self.data_container) + data
 
-        # 'NE' is the identifier of MSG
-
-        if len(packet) < 4:
-            self.msg_container.append(packet)
-            return
-
-        if len(self.msg_container) != 0:
-            self.msg_container.append(packet)
-            packet = ''.join(self.msg_container)
-            if len(packet) < 4:
-                self.msg_container.append(packet)
-                return
-            self.msg_container = []
-
-        packet_len = len(packet)
-        if packet[0:2] != MSG_HEADER:
-            # illegal packet
-            self.msg_container = []
-            self.ready = False
-            self.need_to_read = -1
+        if len(data) < 4:
+            self.data_container.append(data)
         else:
-            msg = packet[4:]
-            total_to_read = self._parse_length(packet[2:4])
-            self.msg_container.append(msg)
-            self.need_to_read = total_to_read - len(msg)
-            self.ready = True if self.need_to_read == 0 else False
+            packet_header = data[0:4]
+            packet_data = data[4:]
+            if packet_header[0:2] != PACKET_HEADER:
+                # illegal packet
+                self.data_container = []
+                self.need_to_read = -1
+                self.ready = False
+            msg_len = self._unpack_len(packet_header[2:])
+            self.data_container.append(packet_data)
+            self.need_to_read = msg_len - len(packet_data)
 
-    def _read(self):
+    def _get_packet(self):
 
         if self.need_to_read == -1:
-            # There are two situation:
+            # There has two situation:
             # 1. A new packet is comming;
-            # 2. Doesn't get whole info about packet header
+            # 2. Doesn't get the whole packet header.
             data = self.sock.recv(4096)
-            self._resolve_header(data)
+            self._get_packet_info(data)
         else:
             data = self.sock.recv(self.need_to_read)
-            self.msg_container.append(data)
+            self.data_container.append(data)
             self.need_to_read -= len(data)
-            self.ready = True if self.need_to_read == 0 else False
-
+        self.ready = (True if self.need_to_read == 0 else False)
 
     def read(self):
 
-        self._read()
+        self._get_packet()
         if not self.ready:
             return None
         else:
-            msg = ''.join(self.msg_container)
-            self.msg_container = []
+            msg = ''.join(self.data_container)
+            self.data_container = []
             self.ready = False
             self.need_to_read = -1
             return msg
@@ -226,9 +221,11 @@ class Session(event.IOEvent):
         pass
 
     def _check(self, user_name, user_passwd):
+
         pass
 
     def _new_user(self, user_name, user_passwd):
+
         pass
 
     def _register(self, msg):
@@ -322,11 +319,11 @@ class Session(event.IOEvent):
 
     def _game_anwser(self, packet):
 
-        msg = packet
         pass
 
-    def _pack_number(self, num):
-        pass
+    def _pack_len(self, length):
+
+        return struct.pack('h', length)
 
     def _build_packet(self, msg):
         """Build packet send to user
@@ -334,7 +331,7 @@ class Session(event.IOEvent):
         """
         data = []
         msg_len = len(msg)
-        data.append()
-        data.append(self._pack_number(msg_len))
+        data.append(PACKET_HEADER)
+        data.append(self._pack_len(msg_len))
         data.append(msg)
         return ''.join(data)
