@@ -35,6 +35,7 @@ class Server(event.IOEvent):
         self._get_listen_sock(ip, port)
         event.IOEvent.__init__(self, self.listen_sock.fileno())
         self.set_io_type(event.EV_IO_READ)
+
         self.no_authorization = {}
         self.online_users = {}
         self.rooms = {}
@@ -81,8 +82,7 @@ class Server(event.IOEvent):
         conn, _ = self.listen_sock.accept()
         conn.setblocking(0)
         new_session = Session(conn, self, event.EV_IO_READ)
-        self.no_authorization[conn.fileno()] = new_session
-        self.event_base.event_add(new_session)
+        self.event_base.add_event(new_session)
 
 
 class Room(object):
@@ -133,6 +133,7 @@ class InChannel(object):
                 self.data_container = []
                 self.need_to_read = -1
                 self.ready = False
+                return
             msg_len = self._unpack_len(packet_header[2:])
             self.data_container.append(packet_data)
             self.need_to_read = msg_len - len(packet_data)
@@ -195,10 +196,13 @@ class Session(event.IOEvent):
 
         self.sock = sock
         self.server = server
+        event.IOEvent.__init__(self, self.sock.fileno())
+        self.set_io_type(event.EV_IO_READ)
+
         self.user_name = None
         self.cur_room = None
 
-        event.IOEvent.__init__(self.sock.fileno(), io_type)
+
         self.authorization = False
         self.read_channel = InChannel(self.sock)
         self.write_channel = OutChannel(self.sock)
@@ -221,7 +225,7 @@ class Session(event.IOEvent):
         msg_type = msg[0:2]
         msg_data = msg[2:]
         if msg_type == MSG_TYPE_REG:
-            self._register(self, msg_data)
+            self._register(msg_data)
         elif msg_type == MSG_TYPE_LOGIN:
             self._login(msg_data)
         elif msg_type == MSG_TYPE_GET_ROOMS:
@@ -239,7 +243,7 @@ class Session(event.IOEvent):
         elif msg_type == MSG_TYPE_BROADCAST:
             self._broadcast(msg)
         elif msg_type == MSG_TYPE_GAME:
-            self._game_anwser()
+            self._game_anwser(msg)
         else:
             pass
 

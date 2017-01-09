@@ -389,9 +389,7 @@ class EventBase(object):
     def event_loop(self):
 
         while True:
-
             timeout = self._timeout_next()
-
             self._dispatch_event(timeout)
             self._prepare_time_event()
             self._process_active_event()
