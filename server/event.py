@@ -127,12 +127,18 @@ class SelectOp(object):
         if event.io_type & EV_IO_WRITE:
             self.write_ev_set.remove(event.ev_fd)
 
-    def ev_set(self, old_event, new_event):
+    def ev_set(self, mod_fd, old_io_type, event):
         """Set new io type for event
 
         """
-        self.ev_del(old_event)
-        self.ev_add(new_event)
+        if old_io_type & EV_IO_READ:
+            self.read_ev_set.remove(mod_fd)
+
+        if old_io_type & EV_IO_WRITE:
+            self.write_ev_set.remove(mod_fd)
+
+        self.ev_add(event)
+
 
     def ev_dispatch(self, timeout):
         """Select IO multiplexing
@@ -171,12 +177,12 @@ class EpollOp(object):
         """
         self.epollfd.unregister(event.ev_fd)
 
-    def ev_set(self, old_event, new_event):
+    def ev_set(self, mod_fd, old_io_type, event):
         """Set new io type for event
 
         """
-        self.ev_del(old_event)
-        self.ev_add(new_event)
+        self.epollfd.unregister(mod_fd)
+        self.ev_add(event)
 
     def ev_dispatch(self, timeout):
         """Epoll IO multiplexing
@@ -232,10 +238,23 @@ class KqueueOp(object):
                                       select.KQ_EV_DELETE)
         self.fd_num -= 1
 
-    def ev_set(self, old_event, new_event):
+    def ev_set(self, mod_fd, old_io_type, event):
 
-        self.ev_del(old_event)
-        self.ev_add(new_event)
+        # Del the old io type
+        if old_io_type & EV_IO_READ:
+            self._update_registration(mod_fd, select.KQ_FILTER_READ,
+                                      select.KQ_EV_DELETE)
+        if old_io_type & EV_IO_WRITE:
+            self._update_registration(mod_fd, select.KQ_FILTER_WRITE,
+                                      select.KQ_EV_DELETE)
+
+        # Add the new io type
+        if event.io_type & EV_IO_READ:
+            self._update_registration(event.ev_fd, select.KQ_FILTER_READ,
+                                      select.KQ_EV_ADD)
+        if event.io_type & EV_IO_WRITE:
+            self._update_registration(event.ev_fd, select.KQ_FILTER_WRITE,
+                                      select.KQ_EV_ADD)
 
     def ev_dispatch(self, timeout):
         """Kqueue IO multiplexing
@@ -311,14 +330,14 @@ class EventBase(object):
 
         return ev_fd in self.io_ev_map
 
-    def set_event(self, ev_fd, io_type):
+    def mod_event(self, ev_fd, new_io_type):
         """Set event io type and register to IO multiplexing reactor
 
         """
         old_io_type = self.io_ev_map[ev_fd].get_io_type()
-        self.io_ev_map[ev_fd].set_io_type(io_type)
-        
-        self.evsel.ev_set(old_event, self.io_ev_map[ev_fd])
+        self.io_ev_map[ev_fd].set_io_type(new_io_type)
+        new_event = self.io_ev_map[ev_fd]
+        self.evsel.ev_set(ev_fd, old_io_type, new_event)
 
     def add_event(self, event):
         """

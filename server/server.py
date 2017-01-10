@@ -35,9 +35,8 @@ class Server(event.IOEvent):
         self._get_listen_sock(ip, port)
         event.IOEvent.__init__(self, self.listen_sock.fileno())
         self.set_io_type(event.EV_IO_READ)
-
-        self.no_authorization = {}
-        self.online_users = {}
+        # self.no_authorization = {}
+        # self.online_users = {}
         self.rooms = {}
         self.rooms["Game Hall"] = Room("Game Hall")
         self.database = self._crt_database()
@@ -146,6 +145,10 @@ class InChannel(object):
             # 2. Doesn't get the whole packet header.
             try:
                 data = self.sock.recv(4096)
+                if data == '':
+                    # means the peer point has closed the socket
+                    self.ready = True
+                    return
                 self._get_packet_info(data)
             except socket.error:
                 # client closed abnormal
@@ -211,7 +214,17 @@ class Session(event.IOEvent):
     def read(self):
 
         msg = self.read_channel.read()
-        if msg is not None:
+
+        if msg == '':
+            # peer point has closed the socket
+            # need to unregister from the room and the event_base
+            self.sock.close()
+            old_room = self.cur_room
+            self.cur_room.leave(self)
+            if old_room.empty():
+                self.server.del_room(old_room.room_name)
+            self.server.event_base.del_event(self)
+        elif msg is not None:
             self._resolve_msg(msg)
 
     def write(self):
@@ -219,13 +232,13 @@ class Session(event.IOEvent):
         self.write_channel.write()
         # no msg to send
         if self.write_channel.empty():
-            self.server.event_base.set_event(self.ev_fd, event.EV_IO_READ)
+            self.server.event_base.mod_event(self.ev_fd, event.EV_IO_READ)
 
     def add_packet_to_outchannel(self, packet):
 
         self.write_channel.add_packet(packet)
         old_io_type = self.get_io_type()
-        self.server.event_base.set_event(self.ev_fd,
+        self.server.event_base.mod_event(self.ev_fd,
                                          old_io_type | event.EV_IO_WRITE)
 
     def _resolve_msg(self, msg):
@@ -275,9 +288,10 @@ class Session(event.IOEvent):
         user_name, user_passwd = msg.split(SEPARATOR)
         self._new_user(user_name, user_passwd)
         self.user_name = user_name
-        self.cur_room = "Game Hall"
-        self.server.rooms[self.cur_room].enter(self)
-
+        # When user register or login, he/she
+        # locate at room "Game Hall"
+        self.cur_room = self.server.rooms["Game Hall"]
+        self.cur_room.enter(self)
         packet = self._build_packet("Success")
         self.add_packet_to_outchannel(packet)
 
@@ -286,9 +300,10 @@ class Session(event.IOEvent):
         user_name, user_passwd = msg.split(SEPARATOR)
         if self._check(user_name, user_passwd):
             self.user_name = user_name
-            self.cur_room = "Game Hall"
-            self.server.rooms[self.cur_room].enter(self)
-
+            # When user register or login, he/she
+            # locate at room "Game Hall"
+            self.cur_room = self.server.rooms["Game Hall"]
+            self.cur_room.enter(self)
             packet = self._build_packet("Success")
         else:
             packet = self._build_packet("Failure")
@@ -297,48 +312,61 @@ class Session(event.IOEvent):
     def _crt_room(self, new_room_name):
 
         new_room = self.server.crt_room(new_room_name)
-        old_room = self.server.rooms[self.cur_room]
+        old_room = self.cur_room
         old_room.leave(self)
         new_room.enter(self)
-        self.cur_room = new_room_name
+        self.cur_room = new_room
         if old_room.empty():
             self.server.del_room(old_room.room_name)
 
     def _join_room(self, join_room_name):
 
-        join_room = self.server.rooms[join_room_name]
-        old_room = self.server.rooms[self.cur_room]
+        try:
+            join_room = self.server.rooms[join_room_name]
+        except KeyError:
+            # Don't has this room
+            packet = self._build_packet("Don't have room named %s" % join_room_name)
+            self.add_packet_to_outchannel(packet)
+        old_room = self.cur_room
         old_room.leave(self)
         join_room.enter(self)
-        self.cur_room = join_room_name
+        self.cur_room = join_room
         if old_room.empty():
             self.server.del_room(old_room.room_name)
 
+    def _leave_room(self):
+
+        old_room = self.cur_room
+        game_hall = self.server.rooms["Game Hall"]
+        old_room.leave(self)
+        game_hall.enter(self)
+        self.cur_room = game_hall
+        if old_room.empty():
+            self.server.del_rooms(old_room.room_name)
+
     def _unitcast(self, packet):
 
-        user_name, msg = packet.split(SEPARATOR)
-        new_packet = self._build_packet(msg)
-        current_room = self.server.rooms[self.cur_room]
-        user_session = current_room.users[user_name]
-        user_session.add_packet_to_outchannel(new_packet)
+        recv_user_name, msg = packet.split(SEPARATOR)
+        new_packet = \
+            self._build_packet(SEPARATOR.join([self.user_name, msg]))
+        # the unitcast only happen on the same room.
+        try:
+            recv_user_session = self.cur_room.sessions[recv_user_name]
+        except KeyError:
+            # Don't have this user
+            packet = self._build_packet("Don't have user named %s" %recv_user_name)
+            self.add_packet_to_outchannel(packet)
+        # Add the packet on the user's Session
+        recv_user_session.add_packet_to_outchannel(new_packet)
 
     def _broadcast(self, packet):
 
         msg = packet
-        new_packet = self._build_packet(msg)
-        current_room = self.server.rooms[self.cur_room]
-        for _, user_session in current_room.sessions.iteritems():
-            user_session.add_packet(new_packet)
-
-    def _leave_room(self):
-
-        old_room = self.server.rooms[self.cur_room]
-        game_hall = self.server.rooms["Game Hall"]
-        old_room.leave(self)
-        game_hall.enter(self)
-        self.cur_room = "Game Hall"
-        if old_room.empty():
-            self.server.del_rooms(old_room.room_name)
+        new_packet = \
+            self._build_packet(SEPARATOR.join([self.user_name, msg]))
+        # For users in the current room
+        for _, recv_user_session in self.cur_room.sessions.iteritems():
+            recv_user_session.add_packet_to_outchannel(new_packet)
 
     def _get_room_list(self):
 
@@ -353,8 +381,7 @@ class Session(event.IOEvent):
     def _get_user_list(self):
 
         users_list = []
-        cur_room = self.server.rooms[self.cur_room]
-        for user_name in cur_room.sessions.keys():
+        for user_name in self.cur_room.sessions.keys():
             users_list.append(user_name)
 
         msg = SEPARATOR.join(users_list)
@@ -379,3 +406,15 @@ class Session(event.IOEvent):
         data.append(self._pack_len(msg_len))
         data.append(msg)
         return ''.join(data)
+
+
+
+if __name__ == "__main__":
+
+    server_ip = ""
+    server_port = 63333
+
+    ev_base = event.EventBase()
+    Server(server_ip, server_port, ev_base)
+
+    ev_base.event_loop()
