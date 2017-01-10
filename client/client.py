@@ -2,6 +2,7 @@
 
 import socket
 import struct
+import sys
 
 
 PACKET_HEADER = 'NE'
@@ -51,6 +52,10 @@ class Client():
         packet_elements.append(self._pack_len(len(msg)))
         return ''.join(packet_elements)
 
+    def _resolve_packet(self, packet):
+
+        return packet[4:]
+
     def _login(self):
 
         while True:
@@ -61,7 +66,25 @@ class Client():
             packet = self._build_packet(msg)
 
             self.connection_sock.sendall(packet)
-            
+            recv_packet = self.connection_sock.recv(4096)
+            msg = self._resolve_packet(recv_packet)
+            if msg == "login Success":
+                break
+
+    def _register(self):
+
+        while True:
+            user_name = raw_input("Username: ").strip()
+            password = raw_input("Password: ").strip()
+            msg = SEPARATOR.join([MSG_TYPE_LOGIN, user_name, password])
+            packet = self._build_packet(msg)
+
+            self.connection_sock.sendall(packet)
+            recv_packet = self.connection_sock.recv(4096)
+            msg = self._resolve_packet(recv_packet)
+            if msg == "register Success":
+                break
+
 
 
     def start(self):
