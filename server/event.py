@@ -122,10 +122,10 @@ class SelectOp(object):
 
         """
         if event.io_type & EV_IO_READ:
-            self.read_ev_set.remove(event.fd)
+            self.read_ev_set.remove(event.ev_fd)
 
         if event.io_type & EV_IO_WRITE:
-            self.write_ev_set.remove(event.fd)
+            self.write_ev_set.remove(event.ev_fd)
 
     def ev_set(self, old_event, new_event):
         """Set new io type for event
@@ -315,8 +315,9 @@ class EventBase(object):
         """Set event io type and register to IO multiplexing reactor
 
         """
-        old_event = self.io_ev_map[ev_fd]
+        old_io_type = self.io_ev_map[ev_fd].get_io_type()
         self.io_ev_map[ev_fd].set_io_type(io_type)
+        
         self.evsel.ev_set(old_event, self.io_ev_map[ev_fd])
 
     def add_event(self, event):
@@ -382,9 +383,11 @@ class EventBase(object):
 
         for time_event in self.active_time_ev:
             time_event.call_back()
+        self.active_time_ev = []
 
         for _, event in self.active_io_ev.iteritems():
             event.call_back()
+        self.active_io_ev = {}
 
     def event_loop(self):
 

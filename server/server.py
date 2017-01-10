@@ -39,7 +39,7 @@ class Server(event.IOEvent):
         self.no_authorization = {}
         self.online_users = {}
         self.rooms = {}
-        self.rooms[0] = Room("Game Hall")
+        self.rooms["Game Hall"] = Room("Game Hall")
         self.database = self._crt_database()
         self.event_base.add_event(self)
 
@@ -50,7 +50,7 @@ class Server(event.IOEvent):
             database_name = ''.join([path, r'\\', "server_data"])
         else:
             database_name = ''.join([path, '/', "server_data"])
-        database_fd = open(database_name, 'r+')
+        database_fd = open(database_name, 'w+')
         return database_fd
 
     def _get_listen_sock(self, ip_address, port):
@@ -116,8 +116,8 @@ class InChannel(object):
 
     def _unpack_len(self, len_filed):
 
-        msg_len, _ = struct.unpack('h', len_filed)
-        return msg_len
+        msg_len = struct.unpack('h', len_filed)
+        return msg_len[0]
 
     def _get_packet_info(self, data):
 
@@ -144,8 +144,12 @@ class InChannel(object):
             # There has two situation:
             # 1. A new packet is comming;
             # 2. Doesn't get the whole packet header.
-            data = self.sock.recv(4096)
-            self._get_packet_info(data)
+            try:
+                data = self.sock.recv(4096)
+                self._get_packet_info(data)
+            except socket.error:
+                # client closed abnormal
+                print "Abnormal closed"
         else:
             data = self.sock.recv(self.need_to_read)
             self.data_container.append(data)
@@ -201,9 +205,6 @@ class Session(event.IOEvent):
 
         self.user_name = None
         self.cur_room = None
-
-
-        self.authorization = False
         self.read_channel = InChannel(self.sock)
         self.write_channel = OutChannel(self.sock)
 
@@ -218,7 +219,14 @@ class Session(event.IOEvent):
         self.write_channel.write()
         # no msg to send
         if self.write_channel.empty():
-            self.set_io_type(event.EV_IO_READ)
+            self.server.event_base.set_event(self.ev_fd, event.EV_IO_READ)
+
+    def add_packet_to_outchannel(self, packet):
+
+        self.write_channel.add_packet(packet)
+        old_io_type = self.get_io_type()
+        self.server.event_base.set_event(self.ev_fd,
+                                         old_io_type | event.EV_IO_WRITE)
 
     def _resolve_msg(self, msg):
 
@@ -253,11 +261,8 @@ class Session(event.IOEvent):
         for user_info in self.server.database:
             name, passwd, online_time_str = user_info.split(SEPARATOR)
             if name == user_name and passwd == user_passwd:
-                packet = self._build_packet("Welcome to Game Hall!")
-                self.write_channel.add_packet(packet)
-                return
-        packet = self._build_packet("The user is illegal, please try again!")
-        self.write_channel.add_packet(packet)
+                return True
+        return False
 
     def _new_user(self, user_name, user_passwd):
 
@@ -272,20 +277,22 @@ class Session(event.IOEvent):
         self.user_name = user_name
         self.cur_room = "Game Hall"
         self.server.rooms[self.cur_room].enter(self)
-        self.authorization = True
-        packet = self._build_packet("Registration Success!")
-        self.write_channel.add_packet(packet)
+
+        packet = self._build_packet("Success")
+        self.add_packet_to_outchannel(packet)
 
     def _login(self, msg):
 
         user_name, user_passwd = msg.split(SEPARATOR)
-        self._check(user_name, user_passwd)
-        self.user_name = user_name
-        self.cur_room = "Game Hall"
-        self.server.rooms[self.cur_room].enter(self)
-        self.authorization = True
-        packet = self._build_packet("Login Success!")
-        self.write_channel.add_packet(packet)
+        if self._check(user_name, user_passwd):
+            self.user_name = user_name
+            self.cur_room = "Game Hall"
+            self.server.rooms[self.cur_room].enter(self)
+
+            packet = self._build_packet("Success")
+        else:
+            packet = self._build_packet("Failure")
+        self.add_packet_to_outchannel(packet)
 
     def _crt_room(self, new_room_name):
 
@@ -313,7 +320,7 @@ class Session(event.IOEvent):
         new_packet = self._build_packet(msg)
         current_room = self.server.rooms[self.cur_room]
         user_session = current_room.users[user_name]
-        user_session.write_channel.add_packet(new_packet)
+        user_session.add_packet_to_outchannel(new_packet)
 
     def _broadcast(self, packet):
 
@@ -341,7 +348,7 @@ class Session(event.IOEvent):
 
         msg = SEPARATOR.join(rooms_list)
         new_packet = self._build_packet(msg)
-        self.write_channel.add_packet(new_packet)
+        self.add_packet_to_outchannel(new_packet)
 
     def _get_user_list(self):
 
@@ -352,7 +359,7 @@ class Session(event.IOEvent):
 
         msg = SEPARATOR.join(users_list)
         new_packet = self._build_packet(msg)
-        self.write_channel.add_packet(new_packet)
+        self.add_packet_to_outchannel(new_packet)
 
     def _game_anwser(self, packet):
 
