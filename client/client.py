@@ -192,3 +192,5 @@ if __name__ == '__main__':
     #         print '[Error] invalid port'
     c = Client("localhost", 63333)
     c.start()
+
+# https://github.com/dizem/ChatRoom/blob/master/Client.py
