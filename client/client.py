@@ -4,7 +4,7 @@ import socket
 import struct
 import sys
 import threading
-
+import time
 
 PACKET_HEADER = 'NE'
 
@@ -56,6 +56,7 @@ class RecvThread(threading.Thread):
         print ''.join([' ' * egde_blank_num, msg, ' ' * egde_blank_num])
         print '-' * length
 
+
     def _display_list(self, title, item_list):
 
         egde_blank_num = 4
@@ -67,16 +68,19 @@ class RecvThread(threading.Thread):
             print '+ ' + item
         print '-' * length
 
+
     def _display_msg(self, data, msg_type):
 
         if msg_type == MSG_TYPE_UNITCAST:
             user, level, msg = data.split(SEPARATOR)
-            display_info = ''.join(["[Private]", user, '(', level, '): ', msg])
+            display_info = ''.join(["[Private]", user, '(Level-', str(level), '): ', msg])
             print display_info
+
         elif msg_type == MSG_TYPE_BROADCAST:
             user, level, msg = data.split(SEPARATOR)
-            display_info = ''.join(["[Public]", user, '(', level, '): ', msg])
+            display_info = ''.join(["[Public]", user, '(Level-', str(level), '): ', msg])
             print display_info
+
         else:
             raise ValueError("Unknown MSG type")
 
@@ -105,7 +109,7 @@ class RecvThread(threading.Thread):
     def _resolve_msg(self, msg):
 
         msg_type = msg[0:2]
-        msg_data = msg[2:0]
+        msg_data = msg[2:]
 
         if msg_type == MSG_TYPE_CRT_ROOM:
             self._crt_room_msg(msg_data)
@@ -123,10 +127,10 @@ class RecvThread(threading.Thread):
             self._get_user_list(msg_data)
 
         elif msg_type == MSG_TYPE_UNITCAST:
-            self._display_msg(msg, MSG_TYPE_UNITCAST)
+            self._display_msg(msg_data, MSG_TYPE_UNITCAST)
 
         elif msg_type == MSG_TYPE_BROADCAST:
-            self._display_msg(msg, MSG_TYPE_BROADCAST)
+            self._display_msg(msg_data, MSG_TYPE_BROADCAST)
 
         elif msg_type == MSG_TYPE_GAME:
             pass
@@ -248,10 +252,10 @@ class Client(object):
         elif cmd_list[0] == "list":
             if cmd_list[1] == "room":
                 self._process_get_room()
-            if cmd_list[1] == "user":
+            elif cmd_list[1] == "user":
                 self._process_get_user()
             else:
-                print "The commond is not correct!"
+                print "list commond is not correct!"
 
         elif cmd_list[0] == "chat":
             user_name = cmd_list[1]
@@ -292,13 +296,13 @@ class Client(object):
                 self.connected_sock.sendall(packet)
                 recv_packet = self.connected_sock.recv(4096)
                 # There is for simple, it is not correct anytime.
-                msg = recv_packet[4:]
-                if msg == "Sucess":
+                msg = recv_packet[6:]
+                if msg == "Success":
                     print "Register Successful!"
                     self._display_list("Usage", Client.cmd_type_list)
                     break
                 else:
-                    print "Register Failure, Please try again!"
+                    print msg
                     continue
 
             elif cmd == "Login":
@@ -312,13 +316,13 @@ class Client(object):
                 self.connected_sock.sendall(packet)
                 recv_packet = self.connected_sock.recv(4096)
                 # There is for simple, it is not correct anytime.
-                msg = recv_packet[4:]
-                if msg == "Sucess":
+                msg = recv_packet[6:]
+                if msg == "Success":
                     print "Login Successful!"
                     self._display_list("Usage", Client.cmd_type_list)
                     break
                 else:
-                    print "Login Failure, Please try again!"
+                    print msg
                     continue
 
             else:
@@ -329,9 +333,14 @@ class Client(object):
         self.login_register()
         recv_thread = RecvThread(self.connected_sock)
         recv_thread.setDaemon(True)
+        recv_thread.start()
 
         while not self.quit:
+            time.sleep(0.1)
             cmd = raw_input(">> ").strip()
+            if cmd == '':
+                self._display_list("Usage", Client.cmd_type_list)
+                continue
             self._resolve_cmd(cmd)
 
 
@@ -345,5 +354,5 @@ if __name__ == '__main__':
     #         c.start()
     #     except ValueError:
     #         print '[Error] invalid port'
-    c = Client("localhost", 63333)
+    c = Client("localhost", 64444)
     c.start()

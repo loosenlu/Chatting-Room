@@ -29,28 +29,18 @@ SEPARATOR = chr(0)
 
 class Server(event.IOEvent):
 
-    def __init__(self, ip, port, base):
+    def __init__(self, ip, port, base, database_path):
 
         self.event_base = base
         self._get_listen_sock(ip, port)
         event.IOEvent.__init__(self, self.listen_sock.fileno())
         self.set_io_type(event.EV_IO_READ)
-        # self.no_authorization = {}
-        # self.online_users = {}
         self.rooms = {}
         self.rooms["Game Hall"] = Room("Game Hall")
-        self.database = self._crt_database()
         self.event_base.add_event(self)
-
-    def _crt_database(self):
-
-        path = os.getcwd()
-        if platform.system() == 'Windows':
-            database_name = ''.join([path, r'\\', "server_data"])
-        else:
-            database_name = ''.join([path, '/', "server_data"])
-        database_fd = open(database_name, 'w+')
-        return database_fd
+        self.registered_users = {}
+        self.database_path = database_path
+        self._get_registered_user()
 
     def _get_listen_sock(self, ip_address, port):
 
@@ -58,6 +48,25 @@ class Server(event.IOEvent):
         self.listen_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.listen_sock.bind((ip_address, port))
         self.listen_sock.listen(10)
+
+    def _get_registered_user(self):
+
+        with open(self.database_path, 'r') as database:
+
+            for user_info in database:
+                user_name, user_passwd, level = user_info.split()
+                self.registered_users[user_name] = [user_passwd, int(level)]
+
+    def update_database(self):
+
+        with open(self.database_path, 'w') as database:
+
+            for user_name, user_info in self.registered_users.iteritems():
+                info_container = []
+                info_container.append(user_name)
+                info_container.append(user_info[0])
+                info_container.append(str(user_info[1]))
+                database.write(' '.join(info_container) + '\n')
 
     def crt_room(self, room_name):
 
@@ -67,6 +76,8 @@ class Server(event.IOEvent):
 
     def del_room(self, room_name):
 
+        if room_name == "Game Hall":
+            return
         del self.rooms[room_name]
 
     def _get_next_21game_time(self):
@@ -207,6 +218,9 @@ class Session(event.IOEvent):
         self.set_io_type(event.EV_IO_READ)
 
         self.user_name = None
+        self.user_level = None
+        self.login_time = None
+
         self.cur_room = None
         self.read_channel = InChannel(self.sock)
         self.write_channel = OutChannel(self.sock)
@@ -218,6 +232,9 @@ class Session(event.IOEvent):
         if msg == '':
             # peer point has closed the socket
             # need to unregister from the room and the event_base
+
+            up_level = int((time.time() - self.login_time) / 600)
+            self.server.registered_users[self.user_name][1] += up_level
             self.sock.close()
             old_room = self.cur_room
             self.cur_room.leave(self)
@@ -254,7 +271,7 @@ class Session(event.IOEvent):
         elif msg_type == MSG_TYPE_GET_USER:
             self._get_user_list()
         elif msg_type == MSG_TYPE_CRT_ROOM:
-            self._login(msg_data)
+            self._crt_room(msg_data)
         elif msg_type == MSG_TYPE_JOIN_ROOM:
             self._join_room(msg_data)
         elif msg_type == MSG_TYPE_LEAVE_ROOM:
@@ -262,51 +279,60 @@ class Session(event.IOEvent):
         elif msg_type == MSG_TYPE_UNITCAST:
             self._unitcast(msg_data)
         elif msg_type == MSG_TYPE_BROADCAST:
-            self._broadcast(msg)
+            self._broadcast(msg_data)
         elif msg_type == MSG_TYPE_GAME:
             self._game_anwser(msg)
         else:
             pass
 
-    def _check(self, user_name, user_passwd):
+    def _check_register(self, user_name):
 
-        self.server.database.seek(0, os.SEEK_SET)
-        for user_info in self.server.database:
-            name, passwd, online_time_str = user_info.split(SEPARATOR)
-            if name == user_name and passwd == user_passwd:
-                return True
+        if user_name in self.server.registered_users:
+            return False
+        return True
+
+    def _check_login(self, user_name, user_passwd, ):
+
+        if (user_name in self.server.registered_users and
+                user_passwd == self.server.registered_users[user_name][0]):
+            return True
         return False
-
-    def _new_user(self, user_name, user_passwd):
-
-        self.server.database.seek(0, os.SEEK_END)
-        user_info = SEPARATOR.join([user_name, user_passwd, str(0)])
-        self.server.database.write(user_info)
 
     def _register(self, msg):
 
         user_name, user_passwd = msg.split(SEPARATOR)
-        self._new_user(user_name, user_passwd)
-        self.user_name = user_name
-        # When user register or login, he/she
-        # locate at room "Game Hall"
-        self.cur_room = self.server.rooms["Game Hall"]
-        self.cur_room.enter(self)
-        packet = self._build_packet(MSG_TYPE_REG + "Success")
+        if not self._check_register(user_name):
+            # check whther has the same name
+            packet = \
+                self._build_packet(MSG_TYPE_REG + "%s has registered." % user_name)
+        else:
+            # When user register or login, he/she
+            # locate at room "Game Hall"
+            self.server.registered_users[user_name] = [user_passwd, 0]
+            self.user_name = user_name
+            self.user_level = 0
+            self.login_time = time.time()
+            self.cur_room = self.server.rooms["Game Hall"]
+            self.cur_room.enter(self)
+            packet = self._build_packet(MSG_TYPE_REG + "Success")
+            # update the database
+            self.server.update_database()
         self.add_packet_to_outchannel(packet)
 
     def _login(self, msg):
 
         user_name, user_passwd = msg.split(SEPARATOR)
-        if self._check(user_name, user_passwd):
-            self.user_name = user_name
+        if self._check_login(user_name, user_passwd):
             # When user register or login, he/she
             # locate at room "Game Hall"
+            self.user_name = user_name
+            self.user_level = self.server.registered_users[user_name][1]
+            self.login_time = time.time()
             self.cur_room = self.server.rooms["Game Hall"]
             self.cur_room.enter(self)
             packet = self._build_packet(MSG_TYPE_LOGIN + "Success")
         else:
-            packet = self._build_packet(MSG_TYPE_LOGIN + "Failure")
+            packet = self._build_packet(MSG_TYPE_LOGIN + "Name/Passwd Wrong!")
         self.add_packet_to_outchannel(packet)
 
     def _crt_room(self, new_room_name):
@@ -361,8 +387,13 @@ class Session(event.IOEvent):
     def _unitcast(self, packet):
 
         recv_user_name, msg = packet.split(SEPARATOR)
+
+        print recv_user_name, msg
+        print self.server.rooms
+
         new_packet = \
-            self._build_packet(MSG_TYPE_UNITCAST + SEPARATOR.join([self.user_name, msg]))
+            self._build_packet(MSG_TYPE_UNITCAST +
+                               SEPARATOR.join([self.user_name, str(self.user_level), msg]))
         # the unitcast only happen on the same room.
         try:
             recv_user_session = self.cur_room.sessions[recv_user_name]
@@ -377,7 +408,8 @@ class Session(event.IOEvent):
 
         msg = packet
         new_packet = \
-            self._build_packet(MSG_TYPE_BROADCAST + SEPARATOR.join([self.user_name, msg]))
+            self._build_packet(MSG_TYPE_BROADCAST +
+                               SEPARATOR.join([self.user_name, str(self.user_level), msg]))
         # For users in the current room
         for _, recv_user_session in self.cur_room.sessions.iteritems():
             recv_user_session.add_packet_to_outchannel(new_packet)
@@ -425,10 +457,11 @@ class Session(event.IOEvent):
 
 if __name__ == "__main__":
 
+    database_path = "/Users/loosen/Program/python/chat room/database"
     server_ip = ""
-    server_port = 63333
+    server_port = 64444
 
     ev_base = event.EventBase()
-    Server(server_ip, server_port, ev_base)
+    Server(server_ip, server_port, ev_base, database_path)
 
     ev_base.event_loop()
