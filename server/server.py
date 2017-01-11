@@ -292,7 +292,7 @@ class Session(event.IOEvent):
         # locate at room "Game Hall"
         self.cur_room = self.server.rooms["Game Hall"]
         self.cur_room.enter(self)
-        packet = self._build_packet("Success")
+        packet = self._build_packet(MSG_TYPE_REG + "Success")
         self.add_packet_to_outchannel(packet)
 
     def _login(self, msg):
@@ -304,9 +304,9 @@ class Session(event.IOEvent):
             # locate at room "Game Hall"
             self.cur_room = self.server.rooms["Game Hall"]
             self.cur_room.enter(self)
-            packet = self._build_packet("Success")
+            packet = self._build_packet(MSG_TYPE_LOGIN + "Success")
         else:
-            packet = self._build_packet("Failure")
+            packet = self._build_packet(MSG_TYPE_LOGIN + "Failure")
         self.add_packet_to_outchannel(packet)
 
     def _crt_room(self, new_room_name):
@@ -318,6 +318,11 @@ class Session(event.IOEvent):
         self.cur_room = new_room
         if old_room.empty():
             self.server.del_room(old_room.room_name)
+        new_packet = \
+            self._build_packet(MSG_TYPE_CRT_ROOM +
+                               "Create room named %s success, now you are at room[%s]"
+                               % (new_room_name, new_room_name))
+        self.add_packet_to_outchannel(new_packet)
 
     def _join_room(self, join_room_name):
 
@@ -325,7 +330,9 @@ class Session(event.IOEvent):
             join_room = self.server.rooms[join_room_name]
         except KeyError:
             # Don't has this room
-            packet = self._build_packet("Don't have room named %s" % join_room_name)
+            packet = \
+                self._build_packet(MSG_TYPE_JOIN_ROOM +
+                                   "Don't have room named %s" % join_room_name)
             self.add_packet_to_outchannel(packet)
         old_room = self.cur_room
         old_room.leave(self)
@@ -333,6 +340,10 @@ class Session(event.IOEvent):
         self.cur_room = join_room
         if old_room.empty():
             self.server.del_room(old_room.room_name)
+        packet = \
+            self._build_packet(MSG_TYPE_JOIN_ROOM +
+                               "Now, you are at room[%s]" % self.cur_room.room_name)
+        self.add_packet_to_outchannel(packet)
 
     def _leave_room(self):
 
@@ -343,19 +354,22 @@ class Session(event.IOEvent):
         self.cur_room = game_hall
         if old_room.empty():
             self.server.del_rooms(old_room.room_name)
+        packet = \
+            self._build_packet(MSG_TYPE_LEAVE_ROOM + "Now, you are at Game Hall!")
+        self.add_packet_to_outchannel(packet)
 
     def _unitcast(self, packet):
 
         recv_user_name, msg = packet.split(SEPARATOR)
         new_packet = \
-            self._build_packet(SEPARATOR.join([self.user_name, msg]))
+            self._build_packet(MSG_TYPE_UNITCAST + SEPARATOR.join([self.user_name, msg]))
         # the unitcast only happen on the same room.
         try:
             recv_user_session = self.cur_room.sessions[recv_user_name]
         except KeyError:
             # Don't have this user
-            packet = self._build_packet("Don't have user named %s" %recv_user_name)
-            self.add_packet_to_outchannel(packet)
+            new_packet = \
+                self._build_packet(MSG_TYPE_UNITCAST + "Don't have user named %s" %recv_user_name)
         # Add the packet on the user's Session
         recv_user_session.add_packet_to_outchannel(new_packet)
 
@@ -363,7 +377,7 @@ class Session(event.IOEvent):
 
         msg = packet
         new_packet = \
-            self._build_packet(SEPARATOR.join([self.user_name, msg]))
+            self._build_packet(MSG_TYPE_BROADCAST + SEPARATOR.join([self.user_name, msg]))
         # For users in the current room
         for _, recv_user_session in self.cur_room.sessions.iteritems():
             recv_user_session.add_packet_to_outchannel(new_packet)
@@ -375,7 +389,7 @@ class Session(event.IOEvent):
             rooms_list.append(room_name)
 
         msg = SEPARATOR.join(rooms_list)
-        new_packet = self._build_packet(msg)
+        new_packet = self._build_packet(MSG_TYPE_GET_ROOMS + msg)
         self.add_packet_to_outchannel(new_packet)
 
     def _get_user_list(self):
@@ -385,7 +399,7 @@ class Session(event.IOEvent):
             users_list.append(user_name)
 
         msg = SEPARATOR.join(users_list)
-        new_packet = self._build_packet(msg)
+        new_packet = self._build_packet(MSG_TYPE_GET_USER + msg)
         self.add_packet_to_outchannel(new_packet)
 
     def _game_anwser(self, packet):
