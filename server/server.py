@@ -109,6 +109,7 @@ class Room(object):
     def enter(self, session):
 
         self.sessions[session.user_name] = session
+        print self.sessions
 
     def empty(self):
 
@@ -235,12 +236,12 @@ class Session(event.IOEvent):
 
             up_level = int((time.time() - self.login_time) / 600)
             self.server.registered_users[self.user_name][1] += up_level
-            self.sock.close()
             old_room = self.cur_room
             self.cur_room.leave(self)
             if old_room.empty():
                 self.server.del_room(old_room.room_name)
             self.server.event_base.del_event(self)
+            self.sock.close()
         elif msg is not None:
             self._resolve_msg(msg)
 
@@ -379,7 +380,7 @@ class Session(event.IOEvent):
         game_hall.enter(self)
         self.cur_room = game_hall
         if old_room.empty():
-            self.server.del_rooms(old_room.room_name)
+            self.server.del_room(old_room.room_name)
         packet = \
             self._build_packet(MSG_TYPE_LEAVE_ROOM + "Now, you are at Game Hall!")
         self.add_packet_to_outchannel(packet)
@@ -387,10 +388,6 @@ class Session(event.IOEvent):
     def _unitcast(self, packet):
 
         recv_user_name, msg = packet.split(SEPARATOR)
-
-        print recv_user_name, msg
-        print self.server.rooms
-
         new_packet = \
             self._build_packet(MSG_TYPE_UNITCAST +
                                SEPARATOR.join([self.user_name, str(self.user_level), msg]))
@@ -412,6 +409,8 @@ class Session(event.IOEvent):
                                SEPARATOR.join([self.user_name, str(self.user_level), msg]))
         # For users in the current room
         for _, recv_user_session in self.cur_room.sessions.iteritems():
+            if self.user_name == recv_user_session.user_name:
+                continue
             recv_user_session.add_packet_to_outchannel(new_packet)
 
     def _get_room_list(self):
@@ -459,7 +458,7 @@ if __name__ == "__main__":
 
     database_path = "/Users/loosen/Program/python/chat room/database"
     server_ip = ""
-    server_port = 64444
+    server_port = 63334
 
     ev_base = event.EventBase()
     Server(server_ip, server_port, ev_base, database_path)

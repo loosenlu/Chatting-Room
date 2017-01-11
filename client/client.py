@@ -354,5 +354,5 @@ if __name__ == '__main__':
     #         c.start()
     #     except ValueError:
     #         print '[Error] invalid port'
-    c = Client("localhost", 64444)
+    c = Client("localhost", 63334)
     c.start()
