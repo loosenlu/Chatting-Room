@@ -1,4 +1,5 @@
 
+
 import struct
 import socket
 import time
@@ -6,6 +7,7 @@ import event
 import os
 import platform
 import random
+import sys
 
 
 PACKET_HEADER = 'NE'
@@ -28,29 +30,6 @@ MSG_TYPE_GAME = 'GA'
 SEPARATOR = chr(0)
 
 
-class GameTimer(event.TimeEvent):
-
-    def __init__(self, server, timeval):
-
-        event.TimeEvent.__init__(timeval)
-        self.server = server
-
-    def call_back(self):
-
-        if self.server.game_off:
-            self.server.game_off = False
-            for _, room in self.server.rooms:
-                room.game_start()
-
-            # register the game off time
-            now = time.time()
-            game_off_time = GameTimer(self.server, now + 15)
-            self.server.event_base.add_event(game_off_time)
-
-        elif not self.server.game_off:
-            self.server.game_off = True
-
-
 class Server(event.IOEvent):
 
     def __init__(self, ip, port, base, database_path):
@@ -60,13 +39,15 @@ class Server(event.IOEvent):
         event.IOEvent.__init__(self, self.listen_sock.fileno())
         self.set_io_type(event.EV_IO_READ)
         self.rooms = {}
-        self.game_off = True
-
         self.rooms["Game Hall"] = Room("Game Hall")
         self.event_base.add_event(self)
         self.registered_users = {}
         self.database_path = database_path
         self._get_registered_user()
+
+        game_start_time = self.get_next_21game_time()
+        game_timer = GameStartTimer(self, game_start_time)
+        self.event_base.add_event(game_timer)
 
     def read(self):
 
@@ -98,6 +79,14 @@ class Server(event.IOEvent):
                 info_container.append(str(user_info[1]))
                 database.write(' '.join(info_container) + '\n')
 
+    def get_next_21game_time(self):
+
+        # For debug, 5 minutes for 21 games
+        half_time = 5 * 60
+        now = time.time()
+        next_21game_time = (int(now) / half_time + 1) * half_time
+        return next_21game_time
+
     def _get_listen_sock(self, ip_address, port):
 
         self.listen_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)
@@ -107,176 +96,15 @@ class Server(event.IOEvent):
 
     def _get_registered_user(self):
 
-        with open(self.database_path, 'r') as database:
-
-            for user_info in database:
-                user_name, user_passwd, level = user_info.split()
-                self.registered_users[user_name] = [user_passwd, int(level)]
-
-    def _get_next_21game_time(self):
-
-        half_time = 30 * 60
-        now = time.time()
-        next_21game_time = (int(now) / half_time + 1) * half_time
-        return next_21game_time
-
-
-class Room(object):
-
-    def __init__(self, room_name):
-
-        self.room_name = room_name
-        self.sessions = {}
-        self.best_answer = None
-        self.finish = None
-
-    def game_start(self):
-
-        self.finish = False
-        number_list = [random.randint(1, 10) for i in xrange(4)]
-        number_sequence = SEPARATOR.join(number_list)
-        packet = self._build_packet(MSG_TYPE_GAME + number_sequence)
-        for _, session in self.sessions:
-            session.add_packet_to_outchannel(packet)
-
-    def get_answer(self, user, msg):
-
-        try:
-            answer = eval(msg)
-        except:
-            packet = self._build_packet("The input expression is not illegal!")
-            user.add_packet_to_outchannel(packet)
-            return
-
-        if answer == 21:
-            self.finish = True
-
-        elif self.best_answer[0] < answer:
-            self.best_answer = (answer, user.user_name)
-
-
-    def leave(self, session):
-
-        del self.sessions[session.user_name]
-
-    def enter(self, session):
-
-        self.sessions[session.user_name] = session
-        print self.sessions
-
-    def empty(self):
-
-        return len(self.sessions) == 0
-
-    def _build_packet(self, msg):
-
-        data = []
-        msg_len = len(msg)
-        data.append(PACKET_HEADER)
-        data.append(self._pack_len(msg_len))
-        data.append(msg)
-        return ''.join(data)
-
-    def _pack_len(self, length):
-
-        return struct.pack('h', length)
-
-    def _unpack_len(self, length):
-
-        pass
-
-
-class InChannel(object):
-
-    def __init__(self, sock):
-
-        self.sock = sock
-        self.ready = False
-        self.data_container = []
-        self.need_to_read = -1
-
-    def _unpack_len(self, len_filed):
-
-        msg_len = struct.unpack('h', len_filed)
-        return msg_len[0]
-
-    def _get_packet_info(self, data):
-
-        data = ''.join(self.data_container) + data
-
-        if len(data) < 4:
-            self.data_container.append(data)
+        if not os.path.exists(self.database_path):
+            fd = open(self.database_path, 'w')
+            fd.close()
         else:
-            packet_header = data[0:4]
-            packet_data = data[4:]
-            if packet_header[0:2] != PACKET_HEADER:
-                # illegal packet
-                self.data_container = []
-                self.need_to_read = -1
-                self.ready = False
-                return
-            msg_len = self._unpack_len(packet_header[2:])
-            self.data_container.append(packet_data)
-            self.need_to_read = msg_len - len(packet_data)
+            with open(self.database_path, 'r') as database:
 
-    def _get_packet(self):
-
-        if self.need_to_read == -1:
-            # There has two situation:
-            # 1. A new packet is comming;
-            # 2. Doesn't get the whole packet header.
-            try:
-                data = self.sock.recv(4096)
-                if data == '':
-                    # means the peer point has closed the socket
-                    self.ready = True
-                    return
-                self._get_packet_info(data)
-            except socket.error:
-                # client closed abnormal
-                print "Abnormal closed"
-        else:
-            data = self.sock.recv(self.need_to_read)
-            self.data_container.append(data)
-            self.need_to_read -= len(data)
-        self.ready = (True if self.need_to_read == 0 else False)
-
-    def read(self):
-
-        self._get_packet()
-        if not self.ready:
-            return None
-        else:
-            msg = ''.join(self.data_container)
-            self.data_container = []
-            self.ready = False
-            self.need_to_read = -1
-            return msg
-
-
-class OutChannel(object):
-
-    def __init__(self, sock):
-
-        self.sock = sock
-        self.packet_container = []
-        self.has_send = 0
-
-    def write(self):
-
-        packet = self.packet_container[0]
-        self.has_send += self.sock.send(packet[self.has_send:])
-        if self.has_send == len(packet):
-            self.has_send = 0
-            del self.packet_container[0]
-
-    def empty(self):
-
-        return len(self.packet_container) == 0
-
-    def add_packet(self, packet):
-
-        self.packet_container.append(packet)
+                for user_info in database:
+                    user_name, user_passwd, level = user_info.split()
+                    self.registered_users[user_name] = [user_passwd, int(level)]
 
 
 class Session(event.IOEvent):
@@ -298,20 +126,18 @@ class Session(event.IOEvent):
 
     def read(self):
 
-        msg = self.read_channel.read()
+        self.server.event_base.time_ev_minheap.top()
+        try:
+            msg = self.read_channel.read()
+        except socket.error:
+            # abnormal closed
+            self._login_out()
+            return
 
         if msg == '':
             # peer point has closed the socket
             # need to unregister from the room and the event_base
-
-            up_level = int((time.time() - self.login_time) / 600)
-            self.server.registered_users[self.user_name][1] += up_level
-            old_room = self.cur_room
-            self.cur_room.leave(self)
-            if old_room.empty():
-                self.server.del_room(old_room.room_name)
-            self.server.event_base.del_event(self)
-            self.sock.close()
+            self._login_out()
         elif msg is not None:
             self._resolve_msg(msg)
 
@@ -352,9 +178,24 @@ class Session(event.IOEvent):
         elif msg_type == MSG_TYPE_BROADCAST:
             self._broadcast(msg_data)
         elif msg_type == MSG_TYPE_GAME:
-            self._game_anwser(msg)
+            self._game_anwser(msg_data)
         else:
             pass
+
+    def _pack_len(self, length):
+
+        return struct.pack('h', length)
+
+    def _build_packet(self, msg):
+        """Build packet send to user
+
+        """
+        data = []
+        msg_len = len(msg)
+        data.append(PACKET_HEADER)
+        data.append(self._pack_len(msg_len))
+        data.append(msg)
+        return ''.join(data)
 
     def _check_register(self, user_name):
 
@@ -405,6 +246,18 @@ class Session(event.IOEvent):
         else:
             packet = self._build_packet(MSG_TYPE_LOGIN + "Name/Passwd Wrong!")
         self.add_packet_to_outchannel(packet)
+
+    def _login_out(self):
+
+        up_level = int((time.time() - self.login_time) / 600)
+        self.server.registered_users[self.user_name][1] += up_level
+        old_room = self.cur_room
+        self.cur_room.leave(self)
+        if old_room.empty():
+            self.server.del_room(old_room.room_name)
+        self.server.event_base.del_event(self)
+        self.sock.close()
+        self.server.update_database()
 
     def _crt_room(self, new_room_name):
 
@@ -467,7 +320,10 @@ class Session(event.IOEvent):
         except KeyError:
             # Don't have this user
             new_packet = \
-                self._build_packet(MSG_TYPE_UNITCAST + "Don't have user named %s" %recv_user_name)
+                self._build_packet(MSG_TYPE_UNITCAST +
+                                   "Room[%s] don't have user named %s"
+                                   %(self.cur_room.room_name, recv_user_name))
+            return
         # Add the packet on the user's Session
         recv_user_session.add_packet_to_outchannel(new_packet)
 
@@ -505,16 +361,83 @@ class Session(event.IOEvent):
 
     def _game_anwser(self, packet):
 
-        pass
+        msg = packet
+        if self.cur_room.game_on_flag:
+            self.cur_room.get_answer(self, msg)
+        else:
+            new_packet = self._build_packet(MSG_TYPE_GAME + "Game off now!")
+            self.add_packet_to_outchannel(new_packet)
 
-    def _pack_len(self, length):
 
-        return struct.pack('h', length)
+class Room(object):
+
+    def __init__(self, room_name):
+
+        self.room_name = room_name
+        self.sessions = {}
+        self.best_answer = None
+        self.game_on_flag = False
+
+    def game_start(self):
+
+        self.game_on_flag = True
+        number_list = [str(random.randint(1, 10)) for i in xrange(4)]
+        number_sequence = ' '.join(number_list)
+        msg = SEPARATOR.join(["start", number_sequence])
+        self._broadcast(msg)
+
+    def get_answer(self, user, msg):
+
+        try:
+            answer = eval(msg)
+        except:
+            packet = \
+                self._build_packet(MSG_TYPE_GAME + "Input expression is not illegal!")
+            user.add_packet_to_outchannel(packet)
+            return
+
+        if answer <= 0 or answer > 21:
+            packet = \
+                self._build_packet(MSG_TYPE_GAME + "Out of the range[1-21]!")
+            user.add_packet_to_outchannel(packet)
+            return
+
+        if self.best_answer is None:
+            self.best_answer = (answer, user.user_name)
+        elif self.best_answer[0] < answer:
+            self.best_answer = (answer, user.user_name)
+
+    def game_end(self):
+
+        self.game_on_flag = False
+        if self.best_answer is None:
+            result = "No winner"
+        else:
+            user_name = self.best_answer[1]
+            result = "The winner is %s" % user_name
+        msg = SEPARATOR.join(["end", result])
+        self._broadcast(msg)
+
+    def leave(self, session):
+
+        del self.sessions[session.user_name]
+
+    def enter(self, session):
+
+        self.sessions[session.user_name] = session
+
+    def empty(self):
+
+        return len(self.sessions) == 0
+
+    def _broadcast(self, msg):
+
+        packet = self._build_packet(MSG_TYPE_GAME + msg)
+        for user in self.sessions.itervalues():
+            user.add_packet_to_outchannel(packet)
 
     def _build_packet(self, msg):
-        """Build packet send to user
 
-        """
         data = []
         msg_len = len(msg)
         data.append(PACKET_HEADER)
@@ -522,15 +445,151 @@ class Session(event.IOEvent):
         data.append(msg)
         return ''.join(data)
 
+    def _pack_len(self, length):
+
+        return struct.pack('h', length)
+
+
+class GameStartTimer(event.TimeEvent):
+
+    def __init__(self, server, timeval):
+
+        event.TimeEvent.__init__(self, timeval)
+        self.server = server
+
+    def call_back(self):
+
+        for each_room in self.server.rooms.itervalues():
+            each_room.game_start()
+
+        # Game duration is 15 second
+        game_end_time = time.time() + 15
+        end_timer = GameEndTimer(self.server, game_end_time)
+        self.server.event_base.add_event(end_timer)
+
+
+class GameEndTimer(event.TimeEvent):
+
+    def __init__(self, server, timeval):
+
+        event.TimeEvent.__init__(self, timeval)
+        self.server = server
+
+    def call_back(self):
+
+        for each_room in self.server.rooms.itervalues():
+            each_room.game_end()
+
+        next_time = self.server.get_next_21game_time()
+        start_time = GameStartTimer(self.server, next_time)
+        self.server.event_base.add_event(start_time)
+
+
+class InChannel(object):
+
+    def __init__(self, sock):
+
+        self.sock = sock
+        self.ready = False
+        self.data_container = []
+        self.need_to_read = -1
+
+    def read(self):
+
+        self._get_packet()
+        if not self.ready:
+            return None
+        else:
+            msg = ''.join(self.data_container)
+            self.data_container = []
+            self.ready = False
+            self.need_to_read = -1
+            return msg
+
+    def _get_packet(self):
+
+        if self.need_to_read == -1:
+            # There has two situation:
+            # 1. A new packet is comming;
+            # 2. Doesn't get the whole packet header.
+            data = self.sock.recv(4096)
+            if data == '':
+                    # means the peer point has closed the socket
+                self.ready = True
+                return
+            self._get_packet_info(data)
+        else:
+            data = self.sock.recv(self.need_to_read)
+            self.data_container.append(data)
+            self.need_to_read -= len(data)
+        self.ready = (True if self.need_to_read == 0 else False)
+
+    def _get_packet_info(self, data):
+
+        data = ''.join(self.data_container) + data
+
+        if len(data) < 4:
+            self.data_container.append(data)
+        else:
+            packet_header = data[0:4]
+            packet_data = data[4:]
+            if packet_header[0:2] != PACKET_HEADER:
+                # illegal packet
+                self.data_container = []
+                self.need_to_read = -1
+                self.ready = False
+                return
+            msg_len = self._unpack_len(packet_header[2:])
+            self.data_container.append(packet_data)
+            self.need_to_read = msg_len - len(packet_data)
+
+    def _unpack_len(self, len_filed):
+
+        msg_len = struct.unpack('h', len_filed)
+        return msg_len[0]
+
+
+class OutChannel(object):
+
+    def __init__(self, sock):
+
+        self.sock = sock
+        self.packet_container = []
+        self.has_send = 0
+
+    def write(self):
+
+        packet = self.packet_container[0]
+        self.has_send += self.sock.send(packet[self.has_send:])
+        if self.has_send == len(packet):
+            self.has_send = 0
+            del self.packet_container[0]
+
+    def empty(self):
+
+        return len(self.packet_container) == 0
+
+    def add_packet(self, packet):
+
+        self.packet_container.append(packet)
+
 
 
 if __name__ == "__main__":
 
-    database_path = "/Users/loosen/Program/python/chat room/database"
-    server_ip = ""
-    server_port = 63334
+
+    if len(sys.argv) != 3:
+        print "[Error] Usage: python server.py <server ip> <server port>"
+
+    server_ip = sys.argv[1]
+    server_port = int(sys.argv[2])
+
+    if platform.system() == "Windows":
+        database_path = ''.join([os.getcwd(), r"\\", "database"])
+    else:
+        database_path = ''.join([os.getcwd(), '/', "database"])
 
     ev_base = event.EventBase()
-    Server(server_ip, server_port, ev_base, database_path)
 
+    Server(server_ip, server_port, ev_base, database_path)
     ev_base.event_loop()
