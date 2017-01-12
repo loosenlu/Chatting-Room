@@ -27,6 +27,28 @@ MSG_TYPE_GAME = 'GA'
 SEPARATOR = chr(0)
 
 
+class GameTimer(event.TimeEvent):
+
+    def __init__(self, server, timeval):
+
+        event.TimeEvent.__init__(self, timeval)
+        self.server = server
+
+    def call_back(self):
+
+        if not self.server.game_on:
+            self.server.game_on = True
+            for _, room in self.server.rooms:
+                room.game_start()
+
+            now = time.time()
+            game_off_timer = GameTimer(self.server, now + 15)
+            self.server.event_base.add_event(game_off_timer)
+
+        elif self.server.game_on:
+            self.server.game_on = False
+
+
 class Server(event.IOEvent):
 
     def __init__(self, ip, port, base):
@@ -37,6 +59,7 @@ class Server(event.IOEvent):
         self.set_io_type(event.EV_IO_READ)
         # self.no_authorization = {}
         # self.online_users = {}
+        self.games_on = False
         self.rooms = {}
         self.rooms["Game Hall"] = Room("Game Hall")
         self.database = self._crt_database()
@@ -90,6 +113,9 @@ class Room(object):
 
         self.room_name = room_name
         self.sessions = {}
+
+    def game_start(self):
+        pass
 
     def leave(self, session):
 
@@ -207,6 +233,8 @@ class Session(event.IOEvent):
         self.set_io_type(event.EV_IO_READ)
 
         self.user_name = None
+        self.level = 0
+        self.login_time = 0
         self.cur_room = None
         self.read_channel = InChannel(self.sock)
         self.write_channel = OutChannel(self.sock)
