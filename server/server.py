@@ -5,6 +5,7 @@ import time
 import event
 import os
 import platform
+import random
 
 
 PACKET_HEADER = 'NE'
@@ -126,10 +127,33 @@ class Room(object):
 
         self.room_name = room_name
         self.sessions = {}
+        self.best_answer = None
+        self.finish = None
 
     def game_start(self):
 
-        pass
+        self.finish = False
+        number_list = [random.randint(1, 10) for i in xrange(4)]
+        number_sequence = SEPARATOR.join(number_list)
+        packet = self._build_packet(MSG_TYPE_GAME + number_sequence)
+        for _, session in self.sessions:
+            session.add_packet_to_outchannel(packet)
+
+    def get_answer(self, user, msg):
+
+        try:
+            answer = eval(msg)
+        except:
+            packet = self._build_packet("The input expression is not illegal!")
+            user.add_packet_to_outchannel(packet)
+            return
+
+        if answer == 21:
+            self.finish = True
+            
+        elif self.best_answer[0] < answer:
+            self.best_answer = (answer, user.user_name)
+
 
     def leave(self, session):
 
@@ -143,6 +167,23 @@ class Room(object):
     def empty(self):
 
         return len(self.sessions) == 0
+
+    def _build_packet(self, msg):
+
+        data = []
+        msg_len = len(msg)
+        data.append(PACKET_HEADER)
+        data.append(self._pack_len(msg_len))
+        data.append(msg)
+        return ''.join(data)
+
+    def _pack_len(self, length):
+
+        return struct.pack('h', length)
+
+    def _unpack_len(self, length):
+
+        pass
 
 
 class InChannel(object):
