@@ -149,8 +149,11 @@ class RecvThread(threading.Thread):
         if msg_item[0] == "start":
             msg = "The numbers are: " + msg_item[1]
             self._display_notification("21 game(start)", msg)
-        elif msg_item[1] == "end":
+        elif msg_item[0] == "end":
+            msg = msg_item[1]
             self._display_notification("21 game(end)", msg)
+        else:
+            self._display_notification("21 game", msg)
 
 
 class Client(object):
@@ -270,6 +273,7 @@ class Client(object):
 
         elif cmd_list[0] == "game":
             msg_data = ''.join(cmd_list[1:])
+            print msg_data
             self._process_game(msg_data)
 
         elif cmd_list[0] == "quit":
@@ -353,7 +357,7 @@ class Client(object):
         self.connected_sock.sendall(packet)
 
     def _process_game(self, msg_data):
-        
+
         msg = MSG_TYPE_GAME + msg_data
         packet = self._build_packet(msg)
         self.connected_sock.sendall(packet)

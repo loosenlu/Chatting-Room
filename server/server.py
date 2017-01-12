@@ -41,7 +41,7 @@ class GameStartTimer(event.TimeEvent):
         for each_room in self.server.rooms.itervalues():
             each_room.game_start()
 
-        game_end_time = time.time() + 15
+        game_end_time = time.time() + 30
         end_timer = GameEndTimer(self.server, game_end_time)
         self.server.event_base.add_event(end_timer)
 
@@ -162,9 +162,16 @@ class Room(object):
             answer = eval(msg)
         except:
             packet = \
-                self._build_packet(MSG_TYPE_GAME + "The input expression is not illegal!")
+                self._build_packet(MSG_TYPE_GAME + "Input expression is not illegal!")
             user.add_packet_to_outchannel(packet)
             return
+
+        if answer <= 0 and answer > 21:
+            packet = \
+                self._build_packet(MSG_TYPE_GAME + "Out of the range[1-21]!")
+            user.add_packet_to_outchannel(packet)
+            return
+
         if self.best_answer is None:
             self.best_answer = (answer, user.user_name)
         elif self.best_answer[0] < answer:
@@ -373,7 +380,7 @@ class Session(event.IOEvent):
         elif msg_type == MSG_TYPE_BROADCAST:
             self._broadcast(msg_data)
         elif msg_type == MSG_TYPE_GAME:
-            self._game_anwser(msg)
+            self._game_anwser(msg_data)
         else:
             pass
 
@@ -452,6 +459,7 @@ class Session(event.IOEvent):
             self.server.del_room(old_room.room_name)
         self.server.event_base.del_event(self)
         self.sock.close()
+        self.server.update_database()
 
     def _crt_room(self, new_room_name):
 
