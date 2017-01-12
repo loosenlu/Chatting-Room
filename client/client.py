@@ -33,6 +33,43 @@ class RecvThread(threading.Thread):
         threading.Thread.__init__(self)
         self.recv_sock = sock
 
+    def run(self):
+
+        while True:
+            msg = self._recv_packet()
+            self._resolve_msg(msg)
+
+    def _resolve_msg(self, msg):
+
+        msg_type = msg[0:2]
+        msg_data = msg[2:]
+
+        if msg_type == MSG_TYPE_CRT_ROOM:
+            self._crt_room_msg(msg_data)
+
+        elif msg_type == MSG_TYPE_JOIN_ROOM:
+            self._join_room_msg(msg_data)
+
+        elif msg_type == MSG_TYPE_LEAVE_ROOM:
+            self._leave_room_msg(msg_data)
+
+        elif msg_type == MSG_TYPE_GET_ROOMS:
+            self._get_room_list(msg_data)
+
+        elif msg_type == MSG_TYPE_GET_USER:
+            self._get_user_list(msg_data)
+
+        elif msg_type == MSG_TYPE_UNITCAST:
+            self._display_msg(msg_data, MSG_TYPE_UNITCAST)
+
+        elif msg_type == MSG_TYPE_BROADCAST:
+            self._display_msg(msg_data, MSG_TYPE_BROADCAST)
+
+        elif msg_type == MSG_TYPE_GAME:
+            self._get_game_info(msg_data)
+        else:
+            raise "unknown msg type!"
+
     def _unpack(self, length):
 
         length = struct.unpack('h', length)
@@ -106,42 +143,14 @@ class RecvThread(threading.Thread):
         user_list = msg.split(SEPARATOR)
         self._display_list("USER LIST", user_list)
 
-    def _resolve_msg(self, msg):
+    def _get_game_info(self, msg):
 
-        msg_type = msg[0:2]
-        msg_data = msg[2:]
-
-        if msg_type == MSG_TYPE_CRT_ROOM:
-            self._crt_room_msg(msg_data)
-
-        elif msg_type == MSG_TYPE_JOIN_ROOM:
-            self._join_room_msg(msg_data)
-
-        elif msg_type == MSG_TYPE_LEAVE_ROOM:
-            self._leave_room_msg(msg_data)
-
-        elif msg_type == MSG_TYPE_GET_ROOMS:
-            self._get_room_list(msg_data)
-
-        elif msg_type == MSG_TYPE_GET_USER:
-            self._get_user_list(msg_data)
-
-        elif msg_type == MSG_TYPE_UNITCAST:
-            self._display_msg(msg_data, MSG_TYPE_UNITCAST)
-
-        elif msg_type == MSG_TYPE_BROADCAST:
-            self._display_msg(msg_data, MSG_TYPE_BROADCAST)
-
-        elif msg_type == MSG_TYPE_GAME:
-            pass
-        else:
-            raise "unknown msg type!"
-
-    def run(self):
-
-        while True:
-            msg = self._recv_packet()
-            self._resolve_msg(msg)
+        msg_item = msg.split(SEPARATOR)
+        if msg_item[0] == "start":
+            msg = "The numbers are: " + msg_item[1]
+            self._display_notification("21 game(start)", msg)
+        elif msg_item[1] == "end":
+            self._display_notification("21 game(end)", msg)
 
 
 class Client(object):
@@ -162,6 +171,116 @@ class Client(object):
 
         self._get_connect_sock(server_ip, server_port)
         self.quit = False
+
+    def start(self):
+
+        self._login_register()
+        recv_thread = RecvThread(self.connected_sock)
+        recv_thread.setDaemon(True)
+        recv_thread.start()
+
+        while not self.quit:
+            time.sleep(0.1)
+            cmd = raw_input(">> ").strip()
+            if cmd == '':
+                continue
+            self._resolve_cmd(cmd)
+
+    def _login_register(self):
+
+        self._display_list("Welcome the Chatting Room!", ["Login", "Register"])
+
+        while True:
+            cmd = raw_input("Do you want: ")
+            if cmd == "Register":
+                user_name = raw_input("Username: ").strip()
+                if ' ' in user_name:
+                    print "The name can't has blank."
+                    continue
+                password = raw_input("Password: ").strip()
+                msg = MSG_TYPE_REG + SEPARATOR.join([user_name, password])
+                packet = self._build_packet(msg)
+                self.connected_sock.sendall(packet)
+                recv_packet = self.connected_sock.recv(4096)
+                # There is for simple, it is not correct anytime.
+                msg = recv_packet[6:]
+                if msg == "Success":
+                    print "Register Successful!"
+                    self._display_list("Usage", Client.cmd_type_list)
+                    break
+                else:
+                    print msg
+                    continue
+
+            elif cmd == "Login":
+                user_name = raw_input("Username: ").strip()
+                if ' ' in user_name:
+                    print "The name can't has blank."
+                    continue
+                password = raw_input("Password: ").strip()
+                msg = MSG_TYPE_LOGIN + SEPARATOR.join([user_name, password])
+                packet = self._build_packet(msg)
+                self.connected_sock.sendall(packet)
+                recv_packet = self.connected_sock.recv(4096)
+                # There is for simple, it is not correct anytime.
+                msg = recv_packet[6:]
+                if msg == "Success":
+                    print "Login Successful!"
+                    self._display_list("Usage", Client.cmd_type_list)
+                    break
+                else:
+                    print msg
+                    continue
+
+            else:
+                print "Command wrong, [Login] or [Register]"
+
+    def _resolve_cmd(self, cmd):
+
+        cmd_list = cmd.split()
+
+        if cmd_list[0] == "create":
+            cmd_data = ''.join(cmd_list[1:])
+            self._process_crt_room(cmd_data)
+
+        elif cmd_list[0] == "enter":
+            cmd_data = ''.join(cmd_list[1:])
+            self._process_join_room(cmd_data)
+
+        elif cmd_list[0] == "leave":
+            cmd_data = ''.join(cmd_list[1:])
+            self._process_leave_room(cmd_data)
+
+        elif cmd_list[0] == "list":
+            if cmd_list[1] == "room":
+                self._process_get_room()
+            elif cmd_list[1] == "user":
+                self._process_get_user()
+            else:
+                print "list commond is not correct!"
+
+        elif cmd_list[0] == "chat":
+            user_name = cmd_list[1]
+            msg_data = ''.join(cmd_list[2:])
+            self._process_unicast(SEPARATOR.join([user_name, msg_data]))
+
+        elif cmd_list[0] == "all":
+            msg_data = ''.join(cmd_list[1:])
+            self._process_broadcast(msg_data)
+
+        elif cmd_list[0] == "game":
+            msg_data = ''.join(cmd_list[1:])
+            self._process_game(msg_data)
+
+        elif cmd_list[0] == "quit":
+            self.quit = True
+            self.connected_sock.close()
+
+        elif cmd_list[0] == "help":
+            self._display_list("Usage", Client.cmd_type_list)
+
+        else:
+            raise "unknown msg type!"
 
     def _get_connect_sock(self, server_ip, server_port):
 
@@ -233,116 +352,11 @@ class Client(object):
         packet = self._build_packet(msg)
         self.connected_sock.sendall(packet)
 
-    def _resolve_cmd(self, cmd):
-
-        cmd_list = cmd.split()
-
-        if cmd_list[0] == "create":
-            cmd_data = ''.join(cmd_list[1:])
-            self._process_crt_room(cmd_data)
-
-        elif cmd_list[0] == "enter":
-            cmd_data = ''.join(cmd_list[1:])
-            self._process_join_room(cmd_data)
-
-        elif cmd_list[0] == "leave":
-            cmd_data = ''.join(cmd_list[1:])
-            self._process_leave_room(cmd_data)
-
-        elif cmd_list[0] == "list":
-            if cmd_list[1] == "room":
-                self._process_get_room()
-            elif cmd_list[1] == "user":
-                self._process_get_user()
-            else:
-                print "list commond is not correct!"
-
-        elif cmd_list[0] == "chat":
-            user_name = cmd_list[1]
-            msg_data = ''.join(cmd_list[2:])
-            self._process_unicast(SEPARATOR.join([user_name, msg_data]))
-
-        elif cmd_list[0] == "all":
-            msg_data = ''.join(cmd_list[1:])
-            self._process_broadcast(msg_data)
-
-        elif cmd_list[0] == "game":
-            pass
-
-        elif cmd_list[0] == "quit":
-            self.quit = True
-            self.connected_sock.close()
-
-        elif cmd_list[0] == "help":
-            self._display_list("Usage", Client.cmd_type_list)
-
-        else:
-            raise "unknown msg type!"
-
-    def login_register(self):
-
-        self._display_list("Welcome the Chatting Room!", ["Login", "Register"])
-
-        while True:
-            cmd = raw_input("Do you want: ")
-            if cmd == "Register":
-                user_name = raw_input("Username: ").strip()
-                if ' ' in user_name:
-                    print "The name can't has blank."
-                    continue
-                password = raw_input("Password: ").strip()
-                msg = MSG_TYPE_REG + SEPARATOR.join([user_name, password])
-                packet = self._build_packet(msg)
-                self.connected_sock.sendall(packet)
-                recv_packet = self.connected_sock.recv(4096)
-                # There is for simple, it is not correct anytime.
-                msg = recv_packet[6:]
-                if msg == "Success":
-                    print "Register Successful!"
-                    self._display_list("Usage", Client.cmd_type_list)
-                    break
-                else:
-                    print msg
-                    continue
-
-            elif cmd == "Login":
-                user_name = raw_input("Username: ").strip()
-                if ' ' in user_name:
-                    print "The name can't has blank."
-                    continue
-                password = raw_input("Password: ").strip()
-                msg = MSG_TYPE_LOGIN + SEPARATOR.join([user_name, password])
-                packet = self._build_packet(msg)
-                self.connected_sock.sendall(packet)
-                recv_packet = self.connected_sock.recv(4096)
-                # There is for simple, it is not correct anytime.
-                msg = recv_packet[6:]
-                if msg == "Success":
-                    print "Login Successful!"
-                    self._display_list("Usage", Client.cmd_type_list)
-                    break
-                else:
-                    print msg
-                    continue
-
-            else:
-                print "Command wrong, [Login] or [Register]"
-
-    def start(self):
-
-        self.login_register()
-        recv_thread = RecvThread(self.connected_sock)
-        recv_thread.setDaemon(True)
-        recv_thread.start()
-
-        while not self.quit:
-            time.sleep(0.1)
-            cmd = raw_input(">> ").strip()
-            if cmd == '':
-                self._display_list("Usage", Client.cmd_type_list)
-                continue
-            self._resolve_cmd(cmd)
-
+    def _process_game(self, msg_data):
+        
+        msg = MSG_TYPE_GAME + msg_data
+        packet = self._build_packet(msg)
+        self.connected_sock.sendall(packet)
 
 if __name__ == '__main__':
 

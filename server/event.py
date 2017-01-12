@@ -311,21 +311,6 @@ class EventBase(object):
         self.active_io_ev = {}
         self.active_time_ev = []
 
-    def _check_backend(self):
-        """Check Environment, select IO multiplexing backend.
-
-        """
-        if platform.system() == 'Linux':
-            # FOR Linux
-            backend = EpollOp()
-        elif platform.system() == 'Darwin':
-            # FOR Mac OS
-            backend = KqueueOp()
-        else:
-            # FOR Win
-            backend = SelectOp()
-        return backend
-
     def has_event(self, ev_fd):
 
         return ev_fd in self.io_ev_map
@@ -348,7 +333,7 @@ class EventBase(object):
             self.time_ev_minheap.push(event)
         else:
             self.io_ev_map[event.ev_fd] = event
-        self.evsel.ev_add(event)
+            self.evsel.ev_add(event)
 
     def del_event(self, event):
         """
@@ -359,6 +344,14 @@ class EventBase(object):
         else:
             del self.io_ev_map[event.ev_fd]
         self.evsel.ev_del(event)
+
+    def event_loop(self):
+
+        while True:
+            timeout = self._timeout_next()
+            self._dispatch_event(timeout)
+            self._prepare_time_event()
+            self._process_active_event()
 
     def _dispatch_event(self, timeout):
         """
@@ -394,7 +387,8 @@ class EventBase(object):
             return
 
         now = time.time()
-        while self.time_ev_minheap.top().ev_timeval <= now:
+        while (not self.time_ev_minheap.empty() and
+               self.time_ev_minheap.top().ev_timeval <= now):
             time_event = self.time_ev_minheap.pop()
             self.active_time_ev.append(time_event)
 
@@ -408,10 +402,17 @@ class EventBase(object):
             event.call_back()
         self.active_io_ev = {}
 
-    def event_loop(self):
+    def _check_backend(self):
+        """Check Environment, select IO multiplexing backend.
 
-        while True:
-            timeout = self._timeout_next()
-            self._dispatch_event(timeout)
-            self._prepare_time_event()
-            self._process_active_event()
+        """
+        if platform.system() == 'Linux':
+            # FOR Linux
+            backend = EpollOp()
+        elif platform.system() == 'Darwin':
+            # FOR Mac OS
+            backend = KqueueOp()
+        else:
+            # FOR Win
+            backend = SelectOp()
+        return backend
