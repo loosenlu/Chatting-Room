@@ -339,7 +339,6 @@ class Client(object):
             time.sleep(0.1)
             cmd = raw_input(">> ").strip()
             if cmd == '':
-                self._display_list("Usage", Client.cmd_type_list)
                 continue
             self._resolve_cmd(cmd)
 

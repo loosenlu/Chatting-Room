@@ -27,6 +27,29 @@ MSG_TYPE_GAME = 'GA'
 SEPARATOR = chr(0)
 
 
+class GameTimer(event.TimeEvent):
+
+    def __init__(self, server, timeval):
+
+        event.TimeEvent.__init__(timeval)
+        self.server = server
+
+    def call_back(self):
+
+        if self.server.game_off:
+            self.server.game_off = False
+            for _, room in self.server.rooms:
+                room.game_start()
+
+            # register the game off time
+            now = time.time()
+            game_off_time = GameTimer(self.server, now + 15)
+            self.server.event_base.add_event(game_off_time)
+
+        elif not self.server.game_off:
+            self.server.game_off = True
+
+
 class Server(event.IOEvent):
 
     def __init__(self, ip, port, base, database_path):
@@ -36,11 +59,43 @@ class Server(event.IOEvent):
         event.IOEvent.__init__(self, self.listen_sock.fileno())
         self.set_io_type(event.EV_IO_READ)
         self.rooms = {}
+        self.game_off = True
+
         self.rooms["Game Hall"] = Room("Game Hall")
         self.event_base.add_event(self)
         self.registered_users = {}
         self.database_path = database_path
         self._get_registered_user()
+
+    def read(self):
+
+        conn, _ = self.listen_sock.accept()
+        conn.setblocking(0)
+        new_session = Session(conn, self, event.EV_IO_READ)
+        self.event_base.add_event(new_session)
+
+    def crt_room(self, room_name):
+
+        new_room = Room(room_name)
+        self.rooms[room_name] = new_room
+        return new_room
+
+    def del_room(self, room_name):
+
+        if room_name == "Game Hall":
+            return
+        del self.rooms[room_name]
+
+    def update_database(self):
+
+        with open(self.database_path, 'w') as database:
+
+            for user_name, user_info in self.registered_users.iteritems():
+                info_container = []
+                info_container.append(user_name)
+                info_container.append(user_info[0])
+                info_container.append(str(user_info[1]))
+                database.write(' '.join(info_container) + '\n')
 
     def _get_listen_sock(self, ip_address, port):
 
@@ -57,42 +112,12 @@ class Server(event.IOEvent):
                 user_name, user_passwd, level = user_info.split()
                 self.registered_users[user_name] = [user_passwd, int(level)]
 
-    def update_database(self):
-
-        with open(self.database_path, 'w') as database:
-
-            for user_name, user_info in self.registered_users.iteritems():
-                info_container = []
-                info_container.append(user_name)
-                info_container.append(user_info[0])
-                info_container.append(str(user_info[1]))
-                database.write(' '.join(info_container) + '\n')
-
-    def crt_room(self, room_name):
-
-        new_room = Room(room_name)
-        self.rooms[room_name] = new_room
-        return new_room
-
-    def del_room(self, room_name):
-
-        if room_name == "Game Hall":
-            return
-        del self.rooms[room_name]
-
     def _get_next_21game_time(self):
 
         half_time = 30 * 60
         now = time.time()
         next_21game_time = (int(now) / half_time + 1) * half_time
         return next_21game_time
-
-    def read(self):
-
-        conn, _ = self.listen_sock.accept()
-        conn.setblocking(0)
-        new_session = Session(conn, self, event.EV_IO_READ)
-        self.event_base.add_event(new_session)
 
 
 class Room(object):
@@ -101,6 +126,10 @@ class Room(object):
 
         self.room_name = room_name
         self.sessions = {}
+
+    def game_start(self):
+
+        pass
 
     def leave(self, session):
 
