@@ -150,7 +150,7 @@ class Room(object):
 
         if answer == 21:
             self.finish = True
-            
+
         elif self.best_answer[0] < answer:
             self.best_answer = (answer, user.user_name)
 
