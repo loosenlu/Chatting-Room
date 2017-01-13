@@ -188,7 +188,7 @@ class EpollOp(object):
         """Epoll IO multiplexing
 
         """
-        events = self.epollfd.epoll(timeout)
+        events = self.epollfd.poll(timeout)
 
         active_read_ev = []
         active_write_ev = []
