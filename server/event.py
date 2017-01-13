@@ -166,13 +166,13 @@ class EpollOp(object):
 
         """
         if event.io_type & EV_IO_READ:
-            self.epollfd.register(event.ev_fd, select.EPOOLIN)
+            self.epollfd.register(event.ev_fd, select.EPOLLIN)
 
         if event.io_type & EV_IO_WRITE:
-            self.epollfd.register(event.ev_fd, select.EPOOLOUT)
+            self.epollfd.register(event.ev_fd, select.EPOLLOUT)
 
     def ev_del(self, event):
-        """Delete event from epoll backend
+        """Delete event from epoll backendL
 
         """
         self.epollfd.unregister(event.ev_fd)
