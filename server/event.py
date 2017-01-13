@@ -193,9 +193,9 @@ class EpollOp(object):
         active_read_ev = []
         active_write_ev = []
         for fd, event in events:
-            if event & select.EPOOLIN:
+            if event & select.EPOLLIN:
                 active_read_ev.append(fd)
-            elif event & select.EPOOLOUT:
+            elif event & select.EPOLLOUT:
                 active_write_ev.append(fd)
         return (active_read_ev, active_write_ev)
 
