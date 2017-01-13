@@ -181,8 +181,14 @@ class EpollOp(object):
         """Set new io type for event
 
         """
-        self.epollfd.unregister(mod_fd)
-        self.ev_add(event)
+        # self.epollfd.unregister(mod_fd)
+        # self.ev_add(event)
+        io_type = 0
+        if event.io_type & EV_IO_READ:
+            io_type |= select.EPOLLIN
+        if event.io_type & EV_IO_WRITE:
+            io_type |= select.EPOLLOUT
+        self.epollfd.modify(event.ev_fd, io_type)
 
     def ev_dispatch(self, timeout):
         """Epoll IO multiplexing
