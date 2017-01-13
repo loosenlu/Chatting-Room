@@ -248,15 +248,15 @@ class Client(object):
         cmd_list = cmd.split()
 
         if cmd_list[0] == "create":
-            cmd_data = ''.join(cmd_list[1:])
+            cmd_data = ' '.join(cmd_list[1:])
             self._process_crt_room(cmd_data)
 
         elif cmd_list[0] == "enter":
-            cmd_data = ''.join(cmd_list[1:])
+            cmd_data = ' '.join(cmd_list[1:])
             self._process_join_room(cmd_data)
 
         elif cmd_list[0] == "leave":
-            cmd_data = ''.join(cmd_list[1:])
+            cmd_data = ' '.join(cmd_list[1:])
             self._process_leave_room(cmd_data)
 
         elif cmd_list[0] == "list":
@@ -269,15 +269,15 @@ class Client(object):
 
         elif cmd_list[0] == "chat":
             user_name = cmd_list[1]
-            msg_data = ''.join(cmd_list[2:])
+            msg_data = ' '.join(cmd_list[2:])
             self._process_unicast(SEPARATOR.join([user_name, msg_data]))
 
         elif cmd_list[0] == "all":
-            msg_data = ''.join(cmd_list[1:])
+            msg_data = ' '.join(cmd_list[1:])
             self._process_broadcast(msg_data)
 
         elif cmd_list[0] == "game":
-            msg_data = ''.join(cmd_list[1:])
+            msg_data = ' '.join(cmd_list[1:])
             print msg_data
             self._process_game(msg_data)
 

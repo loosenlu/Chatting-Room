@@ -50,26 +50,34 @@ class Server(event.IOEvent):
         self.event_base.add_event(game_timer)
 
     def read(self):
+        """Accept the new client
 
+        """
         conn, _ = self.listen_sock.accept()
         conn.setblocking(0)
         new_session = Session(conn, self, event.EV_IO_READ)
         self.event_base.add_event(new_session)
 
     def crt_room(self, room_name):
+        """Crette a new room
 
+        """
         new_room = Room(room_name)
         self.rooms[room_name] = new_room
         return new_room
 
     def del_room(self, room_name):
+        """Delete room named room_name
 
+        """
         if room_name == "Game Hall":
             return
         del self.rooms[room_name]
 
     def update_database(self):
+        """Store the users infomation
 
+        """
         with open(self.database_path, 'w') as database:
 
             for user_name, user_info in self.registered_users.iteritems():
@@ -80,7 +88,9 @@ class Server(event.IOEvent):
                 database.write(' '.join(info_container) + '\n')
 
     def get_next_21game_time(self):
+        """Calculate the 21game start time
 
+        """
         # For debug, 5 minutes for 21 games
         half_time = 5 * 60
         now = time.time()
@@ -125,7 +135,9 @@ class Session(event.IOEvent):
         self.write_channel = OutChannel(self.sock)
 
     def read(self):
+        """Recv the data from connected sock
 
+        """
         self.server.event_base.time_ev_minheap.top()
         try:
             msg = self.read_channel.read()
@@ -142,14 +154,18 @@ class Session(event.IOEvent):
             self._resolve_msg(msg)
 
     def write(self):
+        """Send data to peer sock
 
+        """
         self.write_channel.write()
         # no msg to send
         if self.write_channel.empty():
             self.server.event_base.mod_event(self.ev_fd, event.EV_IO_READ)
 
     def add_packet_to_outchannel(self, packet):
+        """Add packet to out channel
 
+        """
         self.write_channel.add_packet(packet)
         old_io_type = self.get_io_type()
         self.server.event_base.mod_event(self.ev_fd,
@@ -379,7 +395,9 @@ class Room(object):
         self.game_on_flag = False
 
     def game_start(self):
+        """Start the 21 game.
 
+        """
         self.game_on_flag = True
         number_list = [str(random.randint(1, 10)) for i in xrange(4)]
         number_sequence = ' '.join(number_list)
@@ -387,7 +405,9 @@ class Room(object):
         self._broadcast(msg)
 
     def get_answer(self, user, msg):
+        """Get the answer from user.
 
+        """
         try:
             answer = eval(msg)
         except:
@@ -408,7 +428,9 @@ class Room(object):
             self.best_answer = (answer, user.user_name)
 
     def game_end(self):
+        """End the 21 game.
 
+        """
         self.game_on_flag = False
         if self.best_answer is None:
             result = "No winner"
@@ -419,11 +441,15 @@ class Room(object):
         self._broadcast(msg)
 
     def leave(self, session):
+        """Leave this room.
 
+        """
         del self.sessions[session.user_name]
 
     def enter(self, session):
+        """Enter this room.
 
+        """
         self.sessions[session.user_name] = session
 
     def empty(self):
